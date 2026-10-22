@@ -1,0 +1,3217 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>SimProxy — Proxy Simulation Manager</title>
+    <style>
+      /* ═══════════════════════════════════════════════════════════
+         DESIGN TOKENS
+      ═══════════════════════════════════════════════════════════ */
+      :root {
+        --bg:          #0b0d12;
+        --bg-alt:      #0f1117;
+        --surface:     #141720;
+        --surface-2:   #1a1e2b;
+        --surface-3:   #20263a;
+        --border:      #252b3b;
+        --border-soft: #1e2435;
+
+        --text:        #e2e8f4;
+        --text-muted:  #6b7491;
+        --text-dim:    #4a5270;
+
+        --accent:      #00d4aa;
+        --accent-dim:  rgba(0,212,170,.08);
+        --accent-dark: #00b890;
+
+        --green:       #22c55e;
+        --green-bg:    rgba(34,197,94,.10);
+        --red:         #f04f3a;
+        --red-bg:      rgba(240,79,58,.10);
+        --blue:        #3b82f6;
+        --blue-bg:     rgba(59,130,246,.10);
+
+        --font-sans: "Inter","Segoe UI",system-ui,-apple-system,sans-serif;
+        --font-mono: "JetBrains Mono","Fira Code","Cascadia Code",Consolas,monospace;
+
+        --radius-xs: 4px;
+        --radius-sm: 6px;
+        --radius-md: 10px;
+        --radius-lg: 14px;
+
+        --shadow-sm:   0 1px 2px rgba(0,0,0,.3);
+        --shadow-glow: 0 0 20px rgba(0,212,170,.12);
+        --bg-glow-a:   rgba(0,212,170,.06);
+        --bg-glow-b:   rgba(59,130,246,.05);
+        --terminal-log-bg: #0b0d12;
+        --input-focus-bg: #0d1118;
+        --topbar-bg: rgba(11,13,18,.86);
+
+        --page-x: clamp(14px,3vw,28px);
+        --page-y: 22px;
+
+        /* ── Terminal CSS vars controlled by JS ── */
+        --terminal-cols:   2;
+        --terminal-height: 210px;
+
+        /* ── Running Simulations table: 10 rows visible ──
+           Each row ≈ 38px tall, thead ≈ 36px             */
+        --sim-table-max-h: calc(10 * 38px + 37px); /* ≈ 417px */
+      }
+
+      /* ═══════════════════════════════════════════════════════════
+         BASE RESET
+      ═══════════════════════════════════════════════════════════ */
+      *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+      html { color-scheme: dark; }
+      :root[data-theme="light"] { color-scheme: light; }
+      :root[data-theme="light"] {
+        --bg:          #f3f6fb;
+        --bg-alt:      #ffffff;
+        --surface:     #fdfefe;
+        --surface-2:   #f1f4fa;
+        --surface-3:   #e8edf7;
+        --border:      #ccd6e5;
+        --border-soft: #dde5f2;
+
+        --text:        #1f293b;
+        --text-muted:  #4b5c79;
+        --text-dim:    #697a9a;
+
+        --accent:      #0ea57f;
+        --accent-dim:  rgba(14,165,127,.1);
+        --accent-dark: #0b8c6c;
+
+        --green-bg:    rgba(34,197,94,.12);
+        --red-bg:      rgba(240,79,58,.14);
+        --blue-bg:     rgba(59,130,246,.13);
+        --shadow-sm:   0 1px 2px rgba(15,23,42,.08);
+        --shadow-glow: 0 0 16px rgba(14,165,127,.18);
+        --bg-glow-a:   rgba(14,165,127,.14);
+        --bg-glow-b:   rgba(59,130,246,.12);
+        --terminal-log-bg: #0f172a;
+        --input-focus-bg: #f7fbff;
+        --topbar-bg: rgba(243,246,251,.88);
+      }
+
+      body {
+        margin: 0;
+        height: 100vh;
+        overflow: hidden;
+        font-family: var(--font-sans);
+        font-size: 14px;
+        line-height: 1.5;
+        color: var(--text);
+        background-color: var(--bg);
+        background-image:
+          radial-gradient(ellipse 70% 40% at 0% 0%, var(--bg-glow-a) 0%, transparent 60%),
+          radial-gradient(ellipse 50% 50% at 100% 100%, var(--bg-glow-b) 0%, transparent 60%);
+        background-attachment: fixed;
+        -webkit-font-smoothing: antialiased;
+        -moz-osx-font-smoothing: grayscale;
+      }
+
+      /* ═══════════════════════════════════════════════════════════
+         PAGE WRAPPER
+         KEY FIX: display:block (not flex!) so panels don't
+         compete for height. Each panel is naturally sized.
+         The page itself scrolls via overflow-y:auto.
+      ═══════════════════════════════════════════════════════════ */
+      .page {
+        width: 100%;
+        height: 100vh;
+        overflow-y: auto;
+        overflow-x: hidden;
+        padding: var(--page-y) var(--page-x) 62px;
+        display: block; /* ← CRITICAL: block, not flex */
+      }
+
+      .page::-webkit-scrollbar { width: 5px; }
+      .page::-webkit-scrollbar-track { background: transparent; }
+      .page::-webkit-scrollbar-thumb { background: var(--border); border-radius: 99px; }
+      .page::-webkit-scrollbar-thumb:hover { background: var(--text-dim); }
+
+      /* Stack panels with gap using margin */
+      .panel { margin-top: 12px; }
+
+      /* ═══════════════════════════════════════════════════════════
+         TOPBAR
+      ═══════════════════════════════════════════════════════════ */
+      .topbar {
+        position: sticky;
+        top: calc(var(--page-y) * -1);
+        z-index: 60;
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 16px;
+        flex-wrap: wrap;
+        /* Bleed to the page edges so the sticky bar spans the full width. */
+        margin: calc(var(--page-y) * -1) calc(var(--page-x) * -1) 4px;
+        padding: var(--page-y) var(--page-x) 14px;
+        background: var(--topbar-bg);
+        backdrop-filter: blur(10px);
+        -webkit-backdrop-filter: blur(10px);
+        border-bottom: 1px solid var(--border);
+      }
+
+      .topbar-left { display: flex; align-items: center; gap: 22px; flex-wrap: wrap; }
+
+      .brand { display: flex; align-items: center; gap: 10px; }
+
+      .brand-icon {
+        width: 34px; height: 34px;
+        border-radius: var(--radius-md);
+        background: linear-gradient(135deg,#00d4aa 0%,#3b82f6 100%);
+        display: flex; align-items: center; justify-content: center;
+        flex-shrink: 0;
+        box-shadow: var(--shadow-glow);
+      }
+
+      .brand-icon svg {
+        width: 18px; height: 18px;
+        fill: none; stroke: #fff;
+        stroke-width: 2; stroke-linecap: round; stroke-linejoin: round;
+      }
+
+      .brand-text h1 {
+        font-size: 16px; font-weight: 700;
+        letter-spacing: -.2px; color: var(--text); line-height: 1.2;
+      }
+      .brand-text p {
+        font-size: 11px; color: var(--text-muted);
+        font-family: var(--font-mono); line-height: 1; margin-top: 2px;
+      }
+
+      .main-nav { display: flex; align-items: center; gap: 4px; }
+      .main-nav a {
+        display: inline-flex; align-items: center;
+        padding: 6px 12px; border-radius: 999px;
+        font-size: 12px; font-weight: 600; text-decoration: none;
+        color: var(--text-muted); border: 1px solid transparent;
+        transition: color .15s, background .15s, border-color .15s;
+      }
+      .main-nav a:hover { color: var(--text); background: var(--surface-2); }
+      .main-nav a.is-active {
+        color: var(--accent); background: var(--accent-dim);
+        border-color: var(--accent);
+      }
+
+      .topbar-meta { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+      .theme-toggle {
+        width: 32px; height: 32px; padding: 0;
+        border-radius: 999px;
+        background: var(--surface-2);
+        color: var(--text-muted);
+      }
+      .theme-toggle:hover { color: var(--text); border-color: var(--text-dim); }
+      .theme-icon { font-size: 14px; line-height: 1; }
+      .theme-icon-sun { display: none; }
+      .theme-icon-moon { display: inline; }
+      :root[data-theme="light"] .theme-icon-sun { display: inline; }
+      :root[data-theme="light"] .theme-icon-moon { display: none; }
+
+      .meta-chip {
+        display: inline-flex; align-items: center; gap: 5px;
+        padding: 4px 10px;
+        border-radius: 999px;
+        border: 1px solid var(--border);
+        background: var(--surface);
+        font-size: 11px; font-family: var(--font-mono); color: var(--text-muted);
+        white-space: nowrap;
+      }
+
+      .meta-chip .dot {
+        width: 5px; height: 5px; border-radius: 50%;
+        background: var(--green);
+        box-shadow: 0 0 5px var(--green);
+        animation: blink 2.4s infinite;
+      }
+
+      @keyframes blink { 0%,100%{opacity:1} 50%{opacity:.3} }
+
+      /* ═══════════════════════════════════════════════════════════
+         PANEL SHELL
+         Each panel manages its own internal scroll.
+         No height set here — panels are content-sized.
+      ═══════════════════════════════════════════════════════════ */
+      .panel {
+        background: var(--surface);
+        border: 1px solid var(--border);
+        border-radius: var(--radius-lg);
+        overflow: hidden;
+        box-shadow: var(--shadow-sm);
+        transition: border-color .2s;
+      }
+      .panel:hover { border-color: var(--surface-3); }
+
+      .panel-header {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 12px;
+        padding: 11px 16px;
+        background: var(--surface-2);
+        border-bottom: 1px solid var(--border-soft);
+        flex-wrap: wrap;
+        /* Never shrink/grow — always fixed header height */
+        flex-shrink: 0;
+        cursor: pointer;
+      }
+
+      .panel-header-left { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+
+      .panel-label { display: flex; align-items: center; gap: 8px; }
+
+      .panel-label-icon {
+        width: 26px; height: 26px;
+        border-radius: var(--radius-sm);
+        background: var(--accent-dim);
+        border: 1px solid rgba(0,212,170,.15);
+        display: flex; align-items: center; justify-content: center;
+        flex-shrink: 0;
+      }
+      .panel-label-icon svg {
+        width: 13px; height: 13px;
+        stroke: var(--accent); fill: none;
+        stroke-width: 2; stroke-linecap: round; stroke-linejoin: round;
+      }
+
+      .panel-header h3 { font-size: 13px; font-weight: 600; color: var(--text); letter-spacing: .1px; }
+
+      /* ── Create / Terminal panels: padding inside body ── */
+      .panel-body { padding: 16px; }
+      .panel-body.is-collapsed { display: none; }
+
+      /* ── Running Simulations panel: no body padding (table flush) ── */
+      .panel-body-flush { padding: 0; }
+      .panel-body-flush.is-collapsed { display: none; }
+
+      /* ═══════════════════════════════════════════════════════════
+         BUTTONS  (explicit, no broad :not() selectors)
+      ═══════════════════════════════════════════════════════════ */
+      button {
+        display: inline-flex; align-items: center; justify-content: center; gap: 5px;
+        cursor: pointer;
+        border: 1px solid var(--border);
+        border-radius: var(--radius-sm);
+        padding: 7px 13px;
+        font-size: 12px; font-weight: 500;
+        font-family: var(--font-sans); line-height: 1.3;
+        color: var(--text-muted);
+        background: var(--surface-3);
+        transition: background .15s, border-color .15s, box-shadow .15s, transform .1s, color .15s;
+        white-space: nowrap; user-select: none;
+        -webkit-tap-highlight-color: transparent; outline: none;
+      }
+      button:focus-visible { box-shadow: 0 0 0 2px var(--bg), 0 0 0 4px var(--accent); }
+      button:active { transform: scale(.96); }
+
+      /* Primary (Deploy / create) */
+      .btn-primary {
+        background: var(--accent); color: #041a15;
+        font-weight: 600; border-color: var(--accent);
+      }
+      .btn-primary:hover { background: var(--accent-dark); border-color: var(--accent-dark); box-shadow: 0 0 14px rgba(0,212,170,.3); }
+      :root:not([data-theme="light"]) .form-actions .btn-primary {
+        background: #10b38f;
+        border-color: #10b38f;
+        color: #06231c;
+      }
+      :root:not([data-theme="light"]) .form-actions .btn-primary:hover {
+        background: #0f9d7d;
+        border-color: #0f9d7d;
+        box-shadow: none;
+      }
+
+      /* Secondary (Suggest Port) */
+      .btn-secondary { background: var(--surface-2); color: var(--text); border-color: var(--border); }
+      .btn-secondary:hover { background: var(--surface-3); border-color: var(--text-dim); }
+
+      /* Panel collapse toggle */
+      button.panel-toggle {
+        padding: 4px 10px; font-size: 11px;
+        font-family: var(--font-mono);
+        background: var(--surface-3); color: var(--text-muted);
+        border-color: var(--border); border-radius: var(--radius-xs); min-width: 72px;
+      }
+      button.panel-toggle:hover { color: var(--text); border-color: var(--text-dim); }
+
+      /* Table action buttons */
+      button.copy  { background: var(--blue-bg);  color: #93c5fd; border-color: rgba(59,130,246,.25); }
+      button.copy:hover  { background: rgba(59,130,246,.22); }
+      button.warn  { background: var(--red-bg);   color: #fca5a5; border-color: rgba(240,79,58,.25); }
+      button.warn:hover  { background: rgba(240,79,58,.22); }
+      button.alt   { background: var(--surface-3); color: var(--text-muted); border-color: var(--border); }
+      button.alt:hover   { color: var(--text); border-color: var(--text-dim); }
+
+      /* Up button in table (accent green) */
+      button.up-btn { background: rgba(0,212,170,.09); color: var(--accent); border-color: rgba(0,212,170,.22); }
+      button.up-btn:hover { background: rgba(0,212,170,.16); }
+
+      /* ── Terminal height controls ── */
+      #terminalHeightDec,
+      #terminalHeightInc {
+        width: 26px; height: 26px;
+        min-width: unset; padding: 0;
+        border-radius: var(--radius-xs);
+        font-size: 16px; line-height: 1;
+        background: var(--surface-3);
+        color: var(--text-muted);
+        border: 1px solid var(--border);
+      }
+      #terminalHeightDec:hover,
+      #terminalHeightInc:hover {
+        background: var(--bg-alt, #0f1117);
+        color: var(--accent);
+        border-color: rgba(0,212,170,.35);
+        transform: none; /* override active scale on hover */
+      }
+
+      /* ── Layout grid buttons ── */
+      .layout-controls button {
+        padding: 4px 11px; font-size: 11px;
+        background: var(--surface-3); color: var(--text-muted);
+        border-color: var(--border); font-family: var(--font-mono);
+        min-width: unset;
+      }
+      .layout-controls button:hover { color: var(--text); border-color: var(--text-dim); }
+      .layout-controls button.is-active {
+        background: rgba(0,212,170,.12);
+        color: var(--accent);
+        border-color: rgba(0,212,170,.35);
+      }
+
+      /* ═══════════════════════════════════════════════════════════
+         INPUTS / SELECT
+      ═══════════════════════════════════════════════════════════ */
+      input:not([type="checkbox"]):not([type="radio"]), select, textarea {
+        width: 100%;
+        background: var(--bg-alt, #0f1117);
+        border: 1px solid var(--border);
+        border-radius: var(--radius-sm);
+        padding: 9px 12px;
+        font-size: 13px; font-family: var(--font-sans);
+        color: var(--text);
+        transition: border-color .15s, box-shadow .15s, background .15s;
+        outline: none; appearance: auto; color-scheme: inherit;
+        box-sizing: border-box;
+      }
+      textarea {
+        font-family: var(--font-mono);
+        font-size: 12.5px;
+        line-height: 1.45;
+        resize: vertical;
+        min-height: 150px;
+      }
+      input:not([type="checkbox"]):not([type="radio"]):focus, select:focus, textarea:focus {
+        border-color: var(--accent);
+        background: var(--input-focus-bg);
+        box-shadow: 0 0 0 3px rgba(0,212,170,.12);
+      }
+      textarea.is-invalid, input.is-invalid {
+        border-color: var(--red, #f04f3a) !important;
+        box-shadow: 0 0 0 3px rgba(240, 79, 58, 0.2) !important;
+      }
+      .btn-xs-suggest {
+        background: var(--surface);
+        border: 1px solid var(--border);
+        color: var(--text-dim);
+        padding: 2px 7px;
+        border-radius: 4px;
+        font-size: 10.5px;
+        font-weight: 600;
+        cursor: pointer;
+        transition: background 0.15s, color 0.15s, border-color 0.15s;
+      }
+      .btn-xs-suggest:hover {
+        background: var(--bg-alt);
+        color: var(--accent);
+        border-color: var(--accent);
+      }
+      input::placeholder { color: var(--text-dim); }
+      select option { background: var(--surface); }
+
+      label {
+        display: block;
+        font-size: 10.5px; font-weight: 700;
+        letter-spacing: .6px; text-transform: uppercase;
+        color: var(--text-muted); margin-bottom: 6px;
+      }
+
+      /* ═══════════════════════════════════════════════════════════
+         CREATE SIMULATION FORM GRID
+         Content-sized — never collapses, never grows beyond content.
+      ═══════════════════════════════════════════════════════════ */
+      #simForm {
+        display: grid;
+        gap: 12px;
+        grid-template-columns: repeat(9, minmax(0,1fr));
+      }
+
+      .field-name          { grid-column: 1/4;  grid-row: 1; }
+      .field-simulate-url  { grid-column: 4/10; grid-row: 1; }
+      .field-url-type      { grid-column: 1/2;  grid-row: 2; }
+      .field-port          { grid-column: 2/3;  grid-row: 2; }
+      .field-error-code    { grid-column: 3/4;  grid-row: 2; }
+      .field-error-message { grid-column: 4/10; grid-row: 2; }
+      .full                { grid-column: 1/-1; }
+
+      .hint {
+        font-size: 10.5px; color: var(--text-dim);
+        font-family: var(--font-mono); margin-top: 5px;
+      }
+
+      .form-actions { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
+      .form-actions .btn-secondary,
+      .form-actions .btn-primary { padding: 9px 18px; font-size: 13px; min-width: 140px; }
+
+      #formError {
+        margin-top: 10px; min-height: 16px;
+        font-size: 12px; font-family: var(--font-mono);
+        color: var(--red, #f04f3a); padding: 0 2px;
+      }
+
+      /* ═══════════════════════════════════════════════════════════
+         RUNNING SIMULATIONS TABLE
+         KEY FIX: .sim-table-scroll has max-height for 10 rows
+         and its own overflow-y:auto, so only the table scrolls.
+         The panel itself stays fixed-height.
+      ═══════════════════════════════════════════════════════════ */
+      .sim-table-scroll {
+        width: 100%;
+        max-height: var(--sim-table-max-h); /* ~10 rows + header */
+        overflow-y: auto;
+        overflow-x: auto;
+        -webkit-overflow-scrolling: touch;
+      }
+
+      .sim-table-scroll::-webkit-scrollbar { width: 5px; height: 4px; }
+      .sim-table-scroll::-webkit-scrollbar-track { background: transparent; }
+      .sim-table-scroll::-webkit-scrollbar-thumb { background: var(--border); border-radius: 99px; }
+      .sim-table-scroll::-webkit-scrollbar-thumb:hover { background: var(--text-dim); }
+
+      table { width: 100%; min-width: 800px; border-collapse: collapse; font-size: 12.5px; }
+
+      thead {
+        position: sticky; top: 0; z-index: 2;
+        background: var(--surface-2);
+      }
+
+      th {
+        text-align: left; padding: 9px 12px;
+        font-size: 10px; font-weight: 700;
+        letter-spacing: .7px; text-transform: uppercase;
+        color: var(--text-dim); border-bottom: 1px solid var(--border);
+        white-space: nowrap; font-family: var(--font-mono);
+      }
+
+      tbody tr { border-bottom: 1px solid var(--border-soft); transition: background .12s; }
+      tbody tr:last-child { border-bottom: none; }
+      tbody tr:hover { background: rgba(255,255,255,.018); }
+
+      td { padding: 9px 12px; vertical-align: middle; color: var(--text); font-size: 12.5px; }
+      td.mono { font-family: var(--font-mono); font-size: 11.5px; color: var(--text-muted); }
+      td.url-cell { max-width: 220px; overflow: hidden; }
+
+      .endpoint-inline {
+        display: inline-flex;
+        align-items: center;
+        gap: 6px;
+        min-width: 0;
+        max-width: 100%;
+      }
+
+      td.url-cell .endpoint-inline {
+        display: flex;
+        width: 100%;
+      }
+
+      .endpoint-text {
+        min-width: 0;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+      }
+
+      .copy-icon-button {
+        width: 22px;
+        height: 22px;
+        min-width: 22px;
+        padding: 0;
+        border-radius: var(--radius-xs);
+        background: transparent;
+        color: #93c5fd;
+        border-color: transparent;
+        flex-shrink: 0;
+      }
+
+      .copy-icon-button:hover {
+        background: rgba(59,130,246,.12);
+        border-color: rgba(59,130,246,.22);
+        color: #bfdbfe;
+        transform: none;
+      }
+
+      .copy-icon-button.is-copied,
+      .copy-icon-button.is-copied:hover {
+        background: rgba(34,197,94,.12);
+        border-color: rgba(34,197,94,.24);
+        color: #4ade80;
+        transform: none;
+      }
+
+      .copy-icon-button:disabled {
+        opacity: .4;
+        cursor: default;
+        transform: none;
+      }
+
+      .copy-icon-button svg {
+        width: 12px;
+        height: 12px;
+        fill: none;
+        stroke: currentColor;
+        stroke-width: 1.9;
+        stroke-linecap: round;
+        stroke-linejoin: round;
+      }
+
+      td.name-cell {
+        max-width: 220px;
+        overflow: hidden;
+      }
+
+      .name-cell-view,
+      .name-editor {
+        display: flex;
+        align-items: center;
+        gap: 6px;
+        min-width: 0;
+        width: 100%;
+      }
+
+      .name-cell-text {
+        min-width: 0;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+      }
+
+      .inline-icon-button {
+        width: 22px;
+        height: 22px;
+        min-width: 22px;
+        padding: 0;
+        border-radius: var(--radius-xs);
+        background: transparent;
+        border-color: transparent;
+        color: var(--text-dim);
+        flex-shrink: 0;
+      }
+
+      .inline-icon-button:hover {
+        transform: none;
+      }
+
+      .inline-icon-button svg {
+        width: 12px;
+        height: 12px;
+        fill: none;
+        stroke: currentColor;
+        stroke-width: 1.9;
+        stroke-linecap: round;
+        stroke-linejoin: round;
+      }
+
+      .name-edit-button:hover {
+        background: rgba(255,255,255,.06);
+        border-color: var(--border);
+        color: var(--text);
+      }
+
+      .name-save-button {
+        color: #4ade80;
+      }
+
+      .name-save-button:hover {
+        background: rgba(34,197,94,.12);
+        border-color: rgba(34,197,94,.24);
+        color: #86efac;
+      }
+
+      .name-save-button:disabled {
+        opacity: .45;
+        cursor: default;
+        transform: none;
+      }
+
+      .name-editor-input {
+        width: 100%;
+        min-width: 0;
+        padding: 5px 8px;
+        border-radius: var(--radius-xs);
+        border: 1px solid var(--border);
+        background: var(--bg-alt, #0f1117);
+        color: var(--text);
+        font-size: 12px;
+        font-family: var(--font-sans);
+        outline: none;
+      }
+
+      .name-editor-input:focus {
+        border-color: var(--accent);
+        box-shadow: 0 0 0 2px rgba(0,212,170,.12);
+      }
+
+      td.actions { display: flex; flex-wrap: wrap; gap: 4px; align-items: center; }
+      td.actions button { padding: 4px 9px; font-size: 11px; min-width: unset; }
+
+      /* ═══════════════════════════════════════════════════════════
+         STATE BADGE
+      ═══════════════════════════════════════════════════════════ */
+      .state-badge {
+        display: inline-flex; align-items: center; gap: 5px;
+        padding: 3px 8px 3px 6px; border-radius: 999px;
+        font-size: 10.5px; font-weight: 600;
+        font-family: var(--font-mono); letter-spacing: .3px;
+        white-space: nowrap; border: 1px solid transparent;
+      }
+      .state-badge .pip { width: 5px; height: 5px; border-radius: 50%; flex-shrink: 0; }
+
+      .state-up      { background: var(--green-bg); color: #4ade80; border-color: rgba(34,197,94,.2); }
+      .state-up .pip { background: var(--green); box-shadow: 0 0 4px var(--green); }
+
+      .state-down      { background: var(--red-bg); color: #fca5a5; border-color: rgba(240,79,58,.2); }
+      .state-down .pip { background: var(--red); }
+
+      .state-stopped      { background: rgba(255,255,255,.04); color: var(--text-dim); border-color: var(--border); }
+      .state-stopped .pip { background: var(--text-dim); }
+
+      .state-starting      { background: var(--blue-bg); color: #93c5fd; border-color: rgba(59,130,246,.2); }
+      .state-starting .pip { background: var(--blue); animation: blink 1s infinite; }
+
+      /* ═══════════════════════════════════════════════════════════
+         SHOW TOGGLE (select-all checkbox in table header)
+      ═══════════════════════════════════════════════════════════ */
+      .show-toggle {
+        display: inline-flex; align-items: center; gap: 6px;
+        font-size: 10px; font-weight: 700; letter-spacing: .5px;
+        text-transform: uppercase; color: var(--text-dim);
+        font-family: var(--font-mono); white-space: nowrap; cursor: pointer;
+      }
+      .show-toggle input { width: 14px; height: 14px; cursor: pointer; accent-color: var(--accent); }
+
+      /* ═══════════════════════════════════════════════════════════
+         TERMINAL PANEL
+         KEY FIX: no max-height / height on the panel or body —
+         the terminal-grid grows to fit all cards naturally.
+         Only the individual .terminal-body has a fixed height
+         (controlled by --terminal-height via +/- buttons).
+      ═══════════════════════════════════════════════════════════ */
+      .terminal-toolbar {
+        display: flex; align-items: center;
+        justify-content: space-between;
+        gap: 10px; flex-wrap: wrap;
+        margin-bottom: 12px;
+      }
+
+      .terminal-toolbar-left { display: inline-flex; align-items: center; gap: 12px; flex-wrap: wrap; }
+
+      .terminal-size-controls {
+        display: inline-flex; align-items: center; gap: 6px;
+        font-size: 11px; font-family: var(--font-mono); color: var(--text-dim);
+      }
+
+      /* height label between the two buttons */
+      .terminal-size-controls .height-label { user-select: none; }
+
+      /* Current height readout */
+      .terminal-height-val {
+        font-family: var(--font-mono); font-size: 11px;
+        color: var(--accent); min-width: 36px; text-align: center;
+      }
+
+      .layout-controls { display: inline-flex; align-items: center; gap: 4px; flex-wrap: wrap; }
+      .layout-controls span {
+        font-size: 10px; font-family: var(--font-mono); color: var(--text-dim);
+        letter-spacing: .5px; text-transform: uppercase; margin-right: 3px;
+      }
+
+      /* Terminal card grid — expands to fit all cards, no cap */
+      .terminal-grid {
+        display: grid;
+        grid-template-columns: repeat(var(--terminal-cols,2), minmax(0,1fr));
+        gap: 10px;
+      }
+
+      .terminal-card {
+        border: 1px solid var(--border);
+        border-radius: var(--radius-md);
+        background: var(--bg);
+        overflow: hidden;
+        display: flex; flex-direction: column;
+        transition: border-color .2s;
+      }
+      .terminal-card:hover { border-color: var(--surface-3); }
+
+      /* macOS-style header bar */
+      .terminal-head {
+        padding: 8px 12px;
+        background: var(--surface-2);
+        border-bottom: 1px solid var(--border-soft);
+        display: flex; align-items: center; justify-content: space-between;
+        gap: 8px; flex-wrap: wrap;
+        flex-shrink: 0; /* never squish header */
+      }
+
+      .terminal-title-wrap { display: flex; align-items: center; gap: 7px; min-width: 0; flex: 1; flex-wrap: wrap; }
+
+      .term-dots { display: flex; gap: 4px; flex-shrink: 0; }
+      .term-dot  { width: 8px; height: 8px; border-radius: 50%; }
+      .term-dot-r { background: #ff5f57; }
+      .term-dot-y { background: #febc2e; }
+      .term-dot-g { background: #28c840; }
+      .terminal-stream-dot {
+        width: 8px; height: 8px; border-radius: 50%;
+        margin-left: 2px; flex-shrink: 0;
+        border: 1px solid transparent;
+      }
+      .terminal-stream-dot.is-online {
+        background: #22c55e;
+        box-shadow: 0 0 0 1px rgba(34,197,94,.18), 0 0 8px rgba(34,197,94,.45);
+      }
+      .terminal-stream-dot.is-offline {
+        background: #ef4444;
+        box-shadow: 0 0 0 1px rgba(239,68,68,.2);
+      }
+
+      .terminal-title {
+        font-family: var(--font-mono); font-size: 11px;
+        color: var(--text-muted); overflow: hidden;
+        text-overflow: ellipsis; white-space: nowrap; min-width: 0;
+      }
+
+      .terminal-endpoint {
+        color: var(--text);
+        font-family: var(--font-mono);
+        font-size: 11px;
+      }
+
+      .terminal-endpoint-text {
+        min-width: 0;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+      }
+
+      .terminal-actions { display: inline-flex; align-items: center; gap: 4px; flex-shrink: 0; flex-wrap: wrap; }
+      .terminal-actions button { padding: 3px 8px; font-size: 10.5px; min-width: unset; }
+
+      .terminal-clear {
+        padding: 3px 8px; font-size: 10.5px; min-width: unset;
+        background: rgba(255,255,255,.04); color: var(--text-dim);
+        border: 1px solid var(--border); border-radius: var(--radius-xs);
+      }
+      .terminal-clear:hover { background: rgba(255,255,255,.08); color: var(--text-muted); border-color: var(--text-dim); }
+
+      .terminal-refresh {
+        padding: 3px 6px; min-width: unset; line-height: 1;
+        background: rgba(255,255,255,.04); color: var(--text-dim);
+        border: 1px solid var(--border); border-radius: var(--radius-xs);
+        display: inline-flex; align-items: center; justify-content: center;
+      }
+      .terminal-refresh:hover {
+        background: rgba(0,212,170,.1); color: var(--accent);
+        border-color: rgba(0,212,170,.35);
+      }
+      .terminal-refresh:active svg { animation: spin-once .35s linear; }
+      @keyframes spin-once { to { transform: rotate(360deg); } }
+
+      .terminal-actions .btn-down   { background: var(--red-bg);   color: #fca5a5; border: 1px solid rgba(240,79,58,.25); }
+      .terminal-actions .btn-down:hover   { background: rgba(240,79,58,.22); }
+      .terminal-actions .btn-up     { background: var(--green-bg); color: #86efac; border: 1px solid rgba(34,197,94,.25); }
+      .terminal-actions .btn-up:hover     { background: rgba(34,197,94,.22); }
+      .terminal-actions .btn-delete { background: rgba(255,255,255,.04); color: var(--text-dim); border: 1px solid var(--border); }
+      .terminal-actions .btn-delete:hover { color: var(--text-muted); border-color: var(--text-dim); }
+
+      /* Individual terminal log window — height controlled by CSS var */
+      .terminal-body {
+        height: var(--terminal-height, 210px);
+        overflow-y: auto; overflow-x: hidden;
+        padding: 10px 14px;
+        font-family: var(--font-mono); font-size: 11.5px; line-height: 1.7;
+        color: #7a9e92; background: var(--terminal-log-bg);
+        flex-shrink: 0; /* keep the defined height */
+      }
+      .terminal-body::-webkit-scrollbar { width: 4px; }
+      .terminal-body::-webkit-scrollbar-track { background: transparent; }
+      .terminal-body::-webkit-scrollbar-thumb { background: #2a3040; border-radius: 99px; }
+
+      .line { white-space: pre-wrap; word-break: break-all; }
+      .line-stdout { color: #7a9e92; }
+      .line-stderr { color: #c97b3a; }
+      .line-system { color: #4b6fa8; }
+
+      .terminal-empty {
+        color: var(--text-dim); font-size: 12px;
+        font-family: var(--font-mono); padding: 6px 0;
+        display: flex; align-items: center; gap: 8px;
+      }
+      .terminal-empty::before { content: "$"; color: var(--accent); font-weight: 700; }
+
+      /* ═══════════════════════════════════════════════════════════
+         FOOTER
+      ═══════════════════════════════════════════════════════════ */
+      .footer-note {
+        position: fixed; left: 0; right: 0; bottom: 0;
+        padding: 8px 16px;
+        display: flex; align-items: center; justify-content: center; gap: 8px;
+        background: var(--surface); border-top: 1px solid var(--border);
+        z-index: 50; font-size: 11px; font-family: var(--font-mono); color: var(--text-dim);
+      }
+      .footer-note a { color: var(--accent); text-decoration: none; font-weight: 600; transition: opacity .15s; }
+      .footer-note a:hover { opacity: .75; }
+      .footer-sep { color: var(--border); }
+
+      /* ═══════════════════════════════════════════════════════════
+         EMPTY STATE ROW
+      ═══════════════════════════════════════════════════════════ */
+      .empty-row td {
+        text-align: center; color: var(--text-dim);
+        font-size: 12px; font-family: var(--font-mono);
+        padding: 28px 12px;
+      }
+
+      /* ═══════════════════════════════════════════════════════════
+         RESPONSIVE — TABLET ≤ 900px
+      ═══════════════════════════════════════════════════════════ */
+      @media (max-width: 900px) {
+        #simForm { grid-template-columns: repeat(4, minmax(0,1fr)); }
+        .field-name          { grid-column: 1/3; grid-row: 1; }
+        .field-simulate-url  { grid-column: 3/5; grid-row: 1; }
+        .field-url-type      { grid-column: 1/2; grid-row: 2; }
+        .field-port          { grid-column: 2/3; grid-row: 2; }
+        .field-error-code    { grid-column: 3/4; grid-row: 2; }
+        .field-error-message { grid-column: 4/5; grid-row: 2; }
+
+        .terminal-grid { grid-template-columns: repeat(min(var(--terminal-cols,2),2), minmax(0,1fr)); }
+        .layout-controls button[data-cols="4"] { display: none; }
+      }
+
+      /* ═══════════════════════════════════════════════════════════
+         RESPONSIVE — MOBILE ≤ 600px
+      ═══════════════════════════════════════════════════════════ */
+      @media (max-width: 600px) {
+        :root { --page-x: 12px; --page-y: 14px; }
+
+        .topbar { padding-bottom: 12px; }
+        .brand-text p { display: none; }
+        .topbar-meta .meta-chip { display: none; }
+        .main-nav a { padding: 6px 10px; }
+
+        .panel-body, .panel-body-flush { padding: 12px; }
+        .panel-body-flush { padding: 0; }
+
+        #simForm { grid-template-columns: 1fr; }
+        .field-name,.field-simulate-url,.field-url-type,
+        .field-port,.field-error-code,.field-error-message { grid-column: 1; grid-row: unset; }
+
+        .form-actions { flex-direction: column; }
+        .form-actions .btn-secondary,
+        .form-actions .btn-primary { width: 100%; min-width: unset; }
+
+        .terminal-grid { grid-template-columns: 1fr !important; }
+        .terminal-head { flex-direction: column; align-items: flex-start; }
+        .terminal-title { white-space: normal; word-break: break-all; }
+        .terminal-endpoint-text { white-space: normal; word-break: break-all; }
+        .terminal-toolbar { flex-direction: column; align-items: flex-start; }
+        .terminal-toolbar-left { flex-direction: column; align-items: flex-start; }
+
+        .layout-controls button[data-cols="3"],
+        .layout-controls button[data-cols="4"] { display: none; }
+
+        button { min-height: 36px; }
+        td.actions { flex-wrap: wrap; }
+        td.actions button { flex: 1 1 auto; min-width: 50px; }
+      }
+
+      /* ── MCP Horizontal Tabs & AI Auto-Config Prompt ── */
+      .mcp-tab-nav {
+        display: flex;
+        align-items: center;
+        gap: 6px;
+        overflow-x: auto;
+        padding: 4px 2px 10px;
+        margin-top: 10px;
+        margin-bottom: 14px;
+        border-bottom: 1px solid var(--border);
+        -webkit-overflow-scrolling: touch;
+      }
+      .mcp-tab-nav::-webkit-scrollbar { height: 4px; }
+      .mcp-tab-nav::-webkit-scrollbar-thumb { background: var(--border); border-radius: 4px; }
+
+      .mcp-tab-btn {
+        display: inline-flex;
+        align-items: center;
+        gap: 6px;
+        padding: 8px 14px;
+        font-size: 12.5px;
+        font-weight: 500;
+        color: var(--text-muted);
+        background: var(--surface-2);
+        border: 1px solid var(--border);
+        border-radius: var(--radius-sm);
+        cursor: pointer;
+        white-space: nowrap;
+        transition: all 0.15s ease;
+      }
+      .mcp-tab-btn:hover {
+        color: var(--text);
+        background: var(--surface-3);
+        border-color: var(--text-dim);
+      }
+      .mcp-tab-btn.is-active {
+        color: var(--accent);
+        background: var(--accent-dim);
+        border-color: var(--accent);
+        font-weight: 600;
+        box-shadow: 0 0 12px rgba(0,212,170,0.15);
+      }
+      .mcp-tab-icon { font-size: 13px; }
+
+      .mcp-tab-panel { display: block; }
+      .mcp-tab-panel[hidden] { display: none !important; }
+
+      .mcp-config-info {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        margin-bottom: 10px;
+        font-size: 12px;
+        color: var(--text-muted);
+        flex-wrap: wrap;
+      }
+      .mcp-config-badge {
+        display: inline-block;
+        padding: 2px 8px;
+        border-radius: 4px;
+        font-size: 10.5px;
+        font-weight: 700;
+        text-transform: uppercase;
+        letter-spacing: 0.5px;
+        background: var(--blue-bg);
+        color: #93c5fd;
+        border: 1px solid rgba(59,130,246,0.25);
+      }
+      .mcp-config-path { font-size: 11.5px; color: var(--text-dim); }
+      .mcp-cli-hint { font-size: 12px; margin-top: 8px; color: var(--text-muted); }
+
+      /* AI Prompt Card */
+      .mcp-prompt-card {
+        margin-top: 18px;
+        padding: 16px 18px;
+        border-radius: var(--radius-lg);
+        background: linear-gradient(135deg, rgba(0,212,170,0.04) 0%, rgba(59,130,246,0.06) 100%);
+        border: 1px solid rgba(0,212,170,0.22);
+        box-shadow: 0 4px 16px rgba(0,0,0,0.2);
+      }
+      .mcp-prompt-header {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 12px;
+        margin-bottom: 8px;
+        flex-wrap: wrap;
+      }
+      .mcp-prompt-title { display: flex; align-items: center; gap: 10px; }
+      .mcp-prompt-title h3 { font-size: 14px; font-weight: 700; color: var(--text); margin: 0; }
+      .mcp-prompt-badge {
+        display: inline-block;
+        padding: 2px 8px;
+        border-radius: 99px;
+        font-size: 10.5px;
+        font-weight: 700;
+        text-transform: uppercase;
+        background: var(--accent-dim);
+        color: var(--accent);
+        border: 1px solid rgba(0,212,170,0.3);
+      }
+      .btn-copy-prompt {
+        display: inline-flex;
+        align-items: center;
+        gap: 6px;
+        padding: 6px 14px;
+        font-size: 12px;
+        font-weight: 600;
+        border-radius: var(--radius-sm);
+        background: var(--accent);
+        color: #041a15;
+        border: 1px solid var(--accent);
+        cursor: pointer;
+        transition: all 0.15s ease;
+      }
+      .btn-copy-prompt:hover {
+        background: var(--accent-dark);
+        box-shadow: 0 0 12px rgba(0,212,170,0.3);
+      }
+      .btn-copy-prompt.is-copied {
+        background: var(--green);
+        border-color: var(--green);
+        color: #fff;
+      }
+      .mcp-prompt-desc { font-size: 12px; color: var(--text-muted); margin-bottom: 12px; line-height: 1.5; }
+      .mcp-prompt-box {
+        padding: 12px 14px;
+        border-radius: var(--radius-md);
+        background: var(--bg);
+        border: 1px solid var(--border);
+        font-family: var(--font-mono);
+        font-size: 12px;
+        line-height: 1.5;
+        color: var(--text);
+        word-break: break-word;
+      }
+    </style>
+      <link rel="stylesheet" href="/sim-code.css" />
+    <script src="/sim-code.js" defer></script>
+</head>
+  <body>
+    <div class="page">
+
+      <!-- ─── Topbar ──────────────────────────────────────────── -->
+      <div class="topbar">
+        <div class="topbar-left">
+          <div class="brand">
+            <div class="brand-icon">
+              <svg viewBox="0 0 24 24"><path d="M12 2L2 7l10 5 10-5-10-5zM2 17l10 5 10-5M2 12l10 5 10-5"/></svg>
+            </div>
+            <div class="brand-text">
+              <h1>SimProxy</h1>
+              <p>proxy simulation manager</p>
+            </div>
+          </div>
+          <nav class="main-nav">
+            <a href="/" data-nav="home" class="is-active">Home</a>
+            <a href="/docs.html" data-nav="docs">Documentation</a>
+          </nav>
+        </div>
+        <div class="topbar-meta">
+          <div class="meta-chip"><span class="dot"></span>Live</div>
+          <div class="meta-chip">HTTP &amp; WS</div>
+          <div class="meta-chip">Break / Fix</div>
+          <button type="button" id="themeToggle" class="theme-toggle" aria-label="Switch to light mode" title="Switch to light mode">
+            <span class="theme-icon theme-icon-sun">☀</span>
+            <span class="theme-icon theme-icon-moon">🌙</span>
+          </button>
+        </div>
+      </div>
+
+      <!-- ─── Create Simulation ───────────────────────────────── -->
+      <div class="panel">
+        <div class="panel-header">
+          <div class="panel-label">
+            <div class="panel-label-icon">
+              <svg viewBox="0 0 24 24"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+            </div>
+            <h3>Create Simulation</h3>
+          </div>
+          <button type="button" class="panel-toggle" data-panel-toggle="createPanelBody">Minimize</button>
+        </div>
+        <div id="createPanelBody" class="panel-body">
+          <form id="simForm">
+            <div class="field-name">
+              <label for="name">Name</label>
+              <input id="name" type="text" placeholder="auto from live URL, or type your own" />
+            </div>
+
+            <div class="field-simulate-url">
+              <label for="simulateUrl">Live URL</label>
+              <input id="simulateUrl" type="text" placeholder="https://rpc.example.com  or  wss://..." required />
+            </div>
+
+            <div class="field-url-type">
+              <label for="urlType">Protocol</label>
+              <select id="urlType" required>
+                <option value="http">http</option>
+                <option value="ws">ws</option>
+                <!-- DataBase hidden: the db proxy is not behaving as expected. To restore it,
+                     un-comment this line AND re-enable the two "db" returns in
+                     inferUrlTypeFromSimulateUrl() below, which are disabled to match.
+                     The backend still accepts urlType "db" over the API. -->
+                <!-- <option value="db">DataBase</option> -->
+              </select>
+            </div>
+
+            <div class="field-port">
+              <label for="port">Port</label>
+              <input id="port" type="number" min="1000" max="65535" required />
+              <div class="hint">range: 1000–65535</div>
+            </div>
+
+            <div class="field-error-code">
+              <label for="errorCode">Error Code</label>
+              <input id="errorCode" type="number" min="1" value="500" />
+            </div>
+
+            <div class="field-error-message">
+              <div style="display:flex; align-items:center; justify-content:space-between; margin-bottom:6px;">
+                <label for="errorMessage" style="margin-bottom:0;">Error Message</label>
+                <div style="display:flex; align-items:center; gap:8px;">
+                  <button type="button" id="suggestErrorBtn" class="btn-xs-suggest" title="Suggest predefined error response">⚡ Suggest Error</button>
+                  <label style="display:inline-flex; align-items:center; gap:4px; font-size:11px; color:var(--text-muted); text-transform:none; letter-spacing:normal; font-weight:500; cursor:pointer; margin-bottom:0;">
+                    <input type="checkbox" id="customJsonToggle" style="width:auto; cursor:pointer;" />
+                    Custom JSON response
+                  </label>
+                </div>
+              </div>
+              <input id="errorMessage" type="text" value="Service unavailable (simulated)" />
+              <textarea id="errorMessageJson" rows="7" style="display:none;"></textarea>
+              <div id="jsonValidationError" style="display:none; color:var(--red, #f04f3a); font-size:11px; font-family:var(--font-mono); margin-top:4px;"></div>
+            </div>
+
+            <div class="full form-actions">
+              <button class="btn-secondary" id="suggestBtn" type="button">⚡ Suggest Port</button>
+              <button class="btn-primary" id="deploySubmitBtn" type="submit">Deploy Simulation</button>
+            </div>
+          </form>
+          <div id="formError"></div>
+        </div>
+      </div>
+
+      <!-- ─── Running Simulations ─────────────────────────────── -->
+      <div class="panel">
+        <div class="panel-header">
+          <div class="panel-label">
+            <div class="panel-label-icon">
+              <svg viewBox="0 0 24 24"><rect x="2" y="3" width="20" height="14" rx="2"/><path d="M8 21h8M12 17v4"/></svg>
+            </div>
+            <h3>Running Simulations</h3>
+          </div>
+          <button type="button" class="panel-toggle" data-panel-toggle="runningPanelBody">Minimize</button>
+        </div>
+        <!--
+          panel-body-flush: no padding so table extends edge-to-edge.
+          sim-table-scroll: scrolls internally after 10 rows.
+        -->
+        <div id="runningPanelBody" class="panel-body-flush">
+          <div class="sim-table-scroll">
+            <table>
+              <thead>
+                <tr>
+                  <th>ID</th>
+                  <th>Name</th>
+                  <th>Type</th>
+                  <th>Port</th>
+                  <th>Simulated Endpoint</th>
+                  <th>Live URL</th>
+                  <th>State</th>
+                  <th>PID</th>
+                  <th>
+                    <span class="show-toggle">
+                      <input id="toggleAllTerminals" type="checkbox" title="Select/Unselect all terminals" />
+                      Terminal
+                    </span>
+                  </th>
+                  <th>Actions</th>
+                </tr>
+              </thead>
+              <tbody id="simRows"></tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+
+      <!-- ─── Terminal Views ──────────────────────────────────── -->
+      <div class="panel">
+        <div class="panel-header">
+          <div class="panel-header-left">
+            <div class="panel-label">
+              <div class="panel-label-icon">
+                <svg viewBox="0 0 24 24"><polyline points="4 17 10 11 4 5"/><line x1="12" y1="19" x2="20" y2="19"/></svg>
+              </div>
+              <h3>Terminal Views</h3>
+            </div>
+            <!-- Height controls live in the panel HEADER, always visible -->
+            <div class="terminal-size-controls">
+              <button type="button" id="terminalHeightDec" title="Decrease terminal height">−</button>
+              <span class="height-label">height</span>
+              <span class="terminal-height-val" id="terminalHeightVal">210px</span>
+              <button type="button" id="terminalHeightInc" title="Increase terminal height">+</button>
+            </div>
+          </div>
+          <button type="button" class="panel-toggle" data-panel-toggle="terminalPanelBody">Minimize</button>
+        </div>
+        <div id="terminalPanelBody" class="panel-body">
+          <div class="terminal-toolbar">
+            <div><!-- left spacer --></div>
+            <div class="layout-controls">
+              <span>Grid</span>
+              <button type="button" data-cols="1">1</button>
+              <button type="button" data-cols="2">2</button>
+              <button type="button" data-cols="3">3</button>
+              <button type="button" data-cols="4">4</button>
+            </div>
+          </div>
+      </div>
+
+      <!-- ─── MCP Client Configuration Panel ──────────────────── -->
+      <div class="panel">
+        <div class="panel-header">
+          <div class="panel-header-left">
+            <div class="panel-label">
+              <div class="panel-label-icon">
+                <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2a10 10 0 1 0 10 10H12V2z"/><path d="M12 12L2.5 7.5"/><path d="M12 12v10"/></svg>
+              </div>
+              <h3>MCP Client Configuration (AI Assistants)</h3>
+            </div>
+          </div>
+          <button type="button" class="panel-toggle" data-panel-toggle="mcpPanelBody">Expand</button>
+        </div>
+        <div id="mcpPanelBody" class="panel-body is-collapsed">
+          <p class="hint" style="margin-bottom:12px; font-size:12px; color:var(--text-muted);">
+            Connect your AI assistant (Claude Desktop, Cursor IDE, VS Code, Antigravity, Devin, PhpStorm, LM Studio) to SimProxy via MCP (Model Context Protocol).
+          </p>
+
+          <!-- AI Auto-Configuration Prompt Box -->
+          <div class="mcp-prompt-card" style="margin-top: 10px; margin-bottom: 18px;">
+            <div class="mcp-prompt-header">
+              <div class="mcp-prompt-title">
+                <span class="mcp-prompt-badge">⚡ Auto-Config Prompt</span>
+                <h3>Ask AI to Configure MCP Automatically</h3>
+              </div>
+              <button type="button" class="btn-copy-prompt" id="copyWebAiPromptBtn">
+                <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2"><path d="M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2"/><rect x="8" y="2" width="8" height="4" rx="1" ry="1"/></svg>
+                <span>Copy Prompt for AI</span>
+              </button>
+            </div>
+            <p class="mcp-prompt-desc">
+              Copy this prompt into your AI coding assistant (Claude, Cursor, Antigravity, Devin, VS Code Copilot, PhpStorm AI, etc.). The AI will fetch the online documentation to understand MCP tools and write your configuration automatically:
+            </p>
+            <div class="mcp-prompt-box">
+              <code id="aiWebPromptText">Read the MCP documentation at https://proxy.leafapi.com/docs.html?doc=mcp to understand the SimProxy Model Context Protocol integration and available executable tools. Please configure the MCP server "proxy-url" for this workspace using endpoint "https://proxy.leafapi.com/mcp", transport "streamable-http", and header "x-user-code: <span data-sim-code>&lt;$SIM_CODE&gt;</span>".</code>
+            </div>
+          </div>
+
+          <div class="mcp-tab-nav" role="tablist">
+            <button type="button" class="mcp-tab-btn is-active" data-mcp-tab="claude">
+              <span class="mcp-tab-icon">✦</span> Claude Desktop
+            </button>
+            <button type="button" class="mcp-tab-btn" data-mcp-tab="cursor">
+              <span class="mcp-tab-icon">⚡</span> Cursor IDE
+            </button>
+            <button type="button" class="mcp-tab-btn" data-mcp-tab="vscode">
+              <span class="mcp-tab-icon">💻</span> VS Code
+            </button>
+            <button type="button" class="mcp-tab-btn" data-mcp-tab="antigravity">
+              <span class="mcp-tab-icon">🚀</span> Antigravity / Gemini
+            </button>
+            <button type="button" class="mcp-tab-btn" data-mcp-tab="devin">
+              <span class="mcp-tab-icon">🤖</span> Devin AI
+            </button>
+            <button type="button" class="mcp-tab-btn" data-mcp-tab="phpstorm">
+              <span class="mcp-tab-icon">🐘</span> PhpStorm / JetBrains
+            </button>
+            <button type="button" class="mcp-tab-btn" data-mcp-tab="lmstudio">
+              <span class="mcp-tab-icon">🧪</span> Local Studio / LM Studio
+            </button>
+            <button type="button" class="mcp-tab-btn" data-mcp-tab="generic">
+              <span class="mcp-tab-icon">⚙️</span> Generic / stdio CLI
+            </button>
+          </div>
+
+          <div class="mcp-tab-content">
+            <!-- Claude Desktop -->
+            <div class="mcp-tab-panel is-active" id="mcp-web-claude">
+              <div class="mcp-config-info">
+                <span class="mcp-config-badge">Config File</span>
+                <code>claude_desktop_config.json</code>
+                <span class="mcp-config-path">(Mac: <code>~/Library/Application Support/Claude/claude_desktop_config.json</code> | Windows: <code>%APPDATA%\Claude\claude_desktop_config.json</code>)</span>
+              </div>
+              <div class="code-block" style="position:relative; background:var(--bg-alt); border:1px solid var(--border); border-radius:var(--radius-sm); padding:10px 12px; margin-bottom:8px;">
+                <button type="button" class="copy-btn copy-mcp-btn" style="position:absolute; top:8px; right:8px; font-size:11px; padding:3px 8px;">copy</button>
+                <pre style="font-family:var(--font-mono); font-size:11.5px; color:var(--text); margin:0;">{
+  "mcpServers": {
+    "proxy-url": {
+      "url": "https://proxy.leafapi.com/mcp",
+      "transport": "streamable-http",
+      "headers": {
+        "x-user-code": "<span data-sim-code>&lt;$SIM_CODE&gt;</span>"
+      }
+    }
+  }
+}</pre>
+              </div>
+              <p class="mcp-cli-hint">Or run CLI command in terminal: <code>claude mcp add proxy-url https://proxy.leafapi.com/mcp -H "x-user-code: <span data-sim-code>&lt;$SIM_CODE&gt;</span>"</code></p>
+            </div>
+
+            <!-- Cursor IDE -->
+            <div class="mcp-tab-panel" id="mcp-web-cursor" hidden>
+              <div class="mcp-config-info">
+                <span class="mcp-config-badge">Project Config</span>
+                <code>.cursor/mcp.json</code> or Cursor Settings &rarr; Features &rarr; MCP
+              </div>
+              <div class="code-block" style="position:relative; background:var(--bg-alt); border:1px solid var(--border); border-radius:var(--radius-sm); padding:10px 12px;">
+                <button type="button" class="copy-btn copy-mcp-btn" style="position:absolute; top:8px; right:8px; font-size:11px; padding:3px 8px;">copy</button>
+                <pre style="font-family:var(--font-mono); font-size:11.5px; color:var(--text); margin:0;">{
+  "mcpServers": {
+    "proxy-url": {
+      "url": "https://proxy.leafapi.com/mcp",
+      "transport": "streamable-http",
+      "headers": {
+        "x-user-code": "<span data-sim-code>&lt;$SIM_CODE&gt;</span>"
+      }
+    }
+  }
+}</pre>
+              </div>
+            </div>
+
+            <!-- VS Code -->
+            <div class="mcp-tab-panel" id="mcp-web-vscode" hidden>
+              <div class="mcp-config-info">
+                <span class="mcp-config-badge">VS Code Config</span>
+                <code>.vscode/mcp.json</code> (or Roo Code / Cline / Continue / Copilot <code>settings.json</code>)
+              </div>
+              <div class="code-block" style="position:relative; background:var(--bg-alt); border:1px solid var(--border); border-radius:var(--radius-sm); padding:10px 12px;">
+                <button type="button" class="copy-btn copy-mcp-btn" style="position:absolute; top:8px; right:8px; font-size:11px; padding:3px 8px;">copy</button>
+                <pre style="font-family:var(--font-mono); font-size:11.5px; color:var(--text); margin:0;">{
+  "mcpServers": {
+    "proxy-url": {
+      "url": "https://proxy.leafapi.com/mcp",
+      "transport": "streamable-http",
+      "headers": {
+        "x-user-code": "<span data-sim-code>&lt;$SIM_CODE&gt;</span>"
+      }
+    }
+  }
+}</pre>
+              </div>
+            </div>
+
+            <!-- Antigravity / Gemini CLI -->
+            <div class="mcp-tab-panel" id="mcp-web-antigravity" hidden>
+              <div class="mcp-config-info">
+                <span class="mcp-config-badge">Workspace Config</span>
+                <code>.gemini/mcp.json</code> or <code>.antigravity/mcp.json</code>
+              </div>
+              <div class="code-block" style="position:relative; background:var(--bg-alt); border:1px solid var(--border); border-radius:var(--radius-sm); padding:10px 12px;">
+                <button type="button" class="copy-btn copy-mcp-btn" style="position:absolute; top:8px; right:8px; font-size:11px; padding:3px 8px;">copy</button>
+                <pre style="font-family:var(--font-mono); font-size:11.5px; color:var(--text); margin:0;">{
+  "mcpServers": {
+    "proxy-url": {
+      "url": "https://proxy.leafapi.com/mcp",
+      "transport": "streamable-http",
+      "headers": {
+        "x-user-code": "<span data-sim-code>&lt;$SIM_CODE&gt;</span>"
+      }
+    }
+  }
+}</pre>
+              </div>
+            </div>
+
+            <!-- Devin AI -->
+            <div class="mcp-tab-panel" id="mcp-web-devin" hidden>
+              <div class="mcp-config-info">
+                <span class="mcp-config-badge">Devin Config</span>
+                <code>.devin/mcp.json</code> or Devin Workspace Settings &rarr; MCP
+              </div>
+              <div class="code-block" style="position:relative; background:var(--bg-alt); border:1px solid var(--border); border-radius:var(--radius-sm); padding:10px 12px;">
+                <button type="button" class="copy-btn copy-mcp-btn" style="position:absolute; top:8px; right:8px; font-size:11px; padding:3px 8px;">copy</button>
+                <pre style="font-family:var(--font-mono); font-size:11.5px; color:var(--text); margin:0;">{
+  "mcpServers": {
+    "proxy-url": {
+      "url": "https://proxy.leafapi.com/mcp",
+      "transport": "streamable-http",
+      "headers": {
+        "x-user-code": "<span data-sim-code>&lt;$SIM_CODE&gt;</span>"
+      }
+    }
+  }
+}</pre>
+              </div>
+            </div>
+
+            <!-- PhpStorm / JetBrains -->
+            <div class="mcp-tab-panel" id="mcp-web-phpstorm" hidden>
+              <div class="mcp-config-info">
+                <span class="mcp-config-badge">JetBrains / PhpStorm</span>
+                <code>.idea/mcp.json</code> or Settings &rarr; Tools &rarr; Model Context Protocol (MCP)
+              </div>
+              <div class="code-block" style="position:relative; background:var(--bg-alt); border:1px solid var(--border); border-radius:var(--radius-sm); padding:10px 12px;">
+                <button type="button" class="copy-btn copy-mcp-btn" style="position:absolute; top:8px; right:8px; font-size:11px; padding:3px 8px;">copy</button>
+                <pre style="font-family:var(--font-mono); font-size:11.5px; color:var(--text); margin:0;">{
+  "mcpServers": {
+    "proxy-url": {
+      "url": "https://proxy.leafapi.com/mcp",
+      "transport": "streamable-http",
+      "headers": {
+        "x-user-code": "<span data-sim-code>&lt;$SIM_CODE&gt;</span>"
+      }
+    }
+  }
+}</pre>
+              </div>
+            </div>
+
+            <!-- Local Studio / LM Studio -->
+            <div class="mcp-tab-panel" id="mcp-web-lmstudio" hidden>
+              <div class="mcp-config-info">
+                <span class="mcp-config-badge">Local AI Studio</span>
+                LM Studio Developer Settings &rarr; MCP Servers or local client JSON
+              </div>
+              <div class="code-block" style="position:relative; background:var(--bg-alt); border:1px solid var(--border); border-radius:var(--radius-sm); padding:10px 12px;">
+                <button type="button" class="copy-btn copy-mcp-btn" style="position:absolute; top:8px; right:8px; font-size:11px; padding:3px 8px;">copy</button>
+                <pre style="font-family:var(--font-mono); font-size:11.5px; color:var(--text); margin:0;">{
+  "mcpServers": {
+    "proxy-url": {
+      "url": "https://proxy.leafapi.com/mcp",
+      "transport": "streamable-http",
+      "headers": {
+        "x-user-code": "<span data-sim-code>&lt;$SIM_CODE&gt;</span>"
+      }
+    }
+  }
+}</pre>
+              </div>
+            </div>
+
+            <!-- Generic stdio CLI -->
+            <div class="mcp-tab-panel" id="mcp-web-generic" hidden>
+              <div class="mcp-config-info">
+                <span class="mcp-config-badge">Stdio Command Mode</span>
+                Local CLI execution using node &amp; <code>mcp_server.js</code>
+              </div>
+              <div class="code-block" style="position:relative; background:var(--bg-alt); border:1px solid var(--border); border-radius:var(--radius-sm); padding:10px 12px;">
+                <button type="button" class="copy-btn copy-mcp-btn" style="position:absolute; top:8px; right:8px; font-size:11px; padding:3px 8px;">copy</button>
+                <pre style="font-family:var(--font-mono); font-size:11.5px; color:var(--text); margin:0;">{
+  "mcpServers": {
+    "proxy-url": {
+      "command": "node",
+      "args": ["/path/to/proxy-url/mcp_server.js", "--stdio"],
+      "env": {
+        "MANAGER_PORT": "9090",
+        "SIM_CODE": "<span data-sim-code>&lt;$SIM_CODE&gt;</span>"
+      }
+    }
+  }
+}</pre>
+              </div>
+            </div>
+          </div>
+
+        </div>
+      </div>
+
+      <!-- ─── Footer ─────────────────────────────────────────── -->
+      <p class="footer-note">
+        <span>&copy; 2026</span>
+        <span class="footer-sep">·</span>
+        <a href="https://www.linkedin.com/in/jaykumar-gohil-298068183/" target="_blank" rel="noopener noreferrer">Gohil Jaykumar</a>
+        <span class="footer-sep">·</span>
+        <span>Built in India 🇮🇳</span>
+        <span class="footer-sep">·</span>
+        <span id="appVersion">v1.3.18</span>
+      </p>
+    </div>
+
+    <script>
+      const form               = document.getElementById("simForm");
+      const rows               = document.getElementById("simRows");
+      const formError          = document.getElementById("formError");
+      const portInput          = document.getElementById("port");
+      const nameInput          = document.getElementById("name");
+      const urlTypeInput       = document.getElementById("urlType");
+      const simulateUrlInput   = document.getElementById("simulateUrl");
+      const suggestBtn         = document.getElementById("suggestBtn");
+      const terminalDeck       = document.getElementById("terminalDeck");
+      const toggleAllTerminals = document.getElementById("toggleAllTerminals");
+      const runningTableScroll = document.querySelector(".sim-table-scroll");
+      const terminalHeightDec  = document.getElementById("terminalHeightDec");
+      const terminalHeightInc  = document.getElementById("terminalHeightInc");
+      const terminalHeightVal  = document.getElementById("terminalHeightVal");
+      const themeToggle        = document.getElementById("themeToggle");
+      const panelToggles       = document.querySelectorAll("[data-panel-toggle]");
+      const layoutButtons      = document.querySelectorAll(".layout-controls button[data-cols]");
+      const customJsonToggle   = document.getElementById("customJsonToggle");
+      const errorMessageInput  = document.getElementById("errorMessage");
+      const errorMessageJson   = document.getElementById("errorMessageJson");
+      const jsonValidationError= document.getElementById("jsonValidationError");
+      const suggestErrorBtn    = document.getElementById("suggestErrorBtn");
+      const deploySubmitBtn    = document.getElementById("deploySubmitBtn");
+
+      const params   = new URLSearchParams(window.location.search);
+      const isAdmin  = params.get("role") === "admin";
+
+      const userStorageKey                  = "proxy_sim_user_code";
+      const adminTokenStorageKey            = "proxy_sim_admin_token";
+      const terminalSelectionStorageKeyBase = "proxy_sim_checked_terminals";
+      const terminalColsStorageKey          = "proxy_sim_terminal_cols";
+      const panelStateStorageKey            = "proxy_sim_panel_state";
+      const terminalHeightStorageKeyBase    = "proxy_sim_terminal_height";
+      const themeStorageKey                 = "proxy_sim_theme";
+
+      const checkedTerminalIds = [];
+      const terminalBuffers    = new Map();
+      const terminalLastSeenAt = new Map();
+      const terminalStreamUp   = new Map();
+      const copyFeedbackUntil  = new Map();
+      const copyFeedbackTimers = new Map();
+      const terminalNeedsResync = new Set();
+      const terminalResyncInFlight = new Set();
+      let   simulationsById    = new Map();
+      let   autoSuggestedName  = "";
+      let   isNameAutoManaged  = true;
+      let   editingSimulationId = null;
+      let   editingSimulationName = "";
+      let   editingNameSelectionStart = null;
+      let   editingNameSelectionEnd = null;
+      let   renamingSimulationId = null;
+      const TERMINAL_STALE_MS  = 90_000;
+      const COPY_FEEDBACK_MS   = 2200;
+
+      /* ── User identity ──────────────────────────────────────────
+         The code is issued and signed by the server, so it cannot be
+         invented client-side. It is created once and reused from then on. */
+      let userId = localStorage.getItem(userStorageKey) || "";
+
+      async function ensureUserCode() {
+        if (isAdmin) return "admin";
+
+        /* sim-code.js is deferred, so it is only present once parsing ends.
+           Waiting for it keeps both from asking for a code of their own and
+           ending up with two different ones. */
+        if (!window.SimCode && document.readyState === "loading") {
+          await new Promise((resolve) =>
+            document.addEventListener("DOMContentLoaded", resolve, { once: true }),
+          );
+        }
+
+        if (window.SimCode) {
+          userId = (await window.SimCode.ready()) || userId;
+          return userId;
+        }
+
+        /* Fallback if the widget failed to load. */
+        try {
+          const headers = userId ? { "x-user-code": userId } : undefined;
+          const response = await fetch("/api/session", { headers });
+          if (response.ok) {
+            const body = await response.json();
+            if (body && body.user_code) {
+              userId = body.user_code;
+              localStorage.setItem(userStorageKey, userId);
+            }
+          }
+        } catch (error) {
+          console.warn("[Session] could not reach the server", error);
+        }
+        return userId;
+      }
+
+      /* An admin key given once in the URL is kept for later visits. */
+      const adminTokenFromUrl = params.get("admin_key");
+      if (adminTokenFromUrl) localStorage.setItem(adminTokenStorageKey, adminTokenFromUrl);
+      const adminToken = localStorage.getItem(adminTokenStorageKey) || "";
+      /* Per-browser UI preferences - the user code is fetched later, so these
+         keys must not depend on it. */
+      const terminalSelectionStorageKey =
+        `${terminalSelectionStorageKeyBase}_${isAdmin ? "admin" : "user"}`;
+      const terminalHeightStorageKey =
+        `${terminalHeightStorageKeyBase}_${isAdmin ? "admin" : "user"}`;
+      const sseDebugEnabled =
+        params.get("sse_debug") === "1" || localStorage.getItem("proxy_sim_debug_sse") === "1";
+
+      function sseDebugLog(level, message, meta) {
+        if (!sseDebugEnabled) return;
+        const fn = level === "error" ? console.error : level === "warn" ? console.warn : console.log;
+        if (meta !== undefined) fn(`[SSE-DBG ${new Date().toISOString()}] ${message}`, meta);
+        else fn(`[SSE-DBG ${new Date().toISOString()}] ${message}`);
+      }
+
+      /* ── API helper ─────────────────────────────────────────── */
+      async function api(path, options) {
+        const url = new URL(path, window.location.origin);
+        if (isAdmin) url.searchParams.set("role", "admin");
+        const fetchOptions = options ? { ...options } : {};
+        fetchOptions.headers = fetchOptions.headers ? { ...fetchOptions.headers } : {};
+        if (isAdmin) {
+          if (adminToken) fetchOptions.headers["x-admin-token"] = adminToken;
+        } else if (userId) {
+          fetchOptions.headers["x-user-code"] = userId;
+        }
+        const response = await fetch(url.toString(), fetchOptions);
+        const body = await response.json().catch(() => ({}));
+        if (!response.ok) throw body;
+        return body;
+      }
+
+      /* ── Endpoint helper ────────────────────────────────────── */
+      function getSimulatedEndpoint(sim) {
+        const original = sim.proxy_url || "";
+        return original ? original.replace(/\/$/, "") : "";
+      }
+
+      function simulationCreatedAtMs(sim) {
+        const createdAt = Date.parse(sim && sim.createdAt ? sim.createdAt : "");
+        if (Number.isFinite(createdAt)) return createdAt;
+        const match = String(sim && sim.id ? sim.id : "").match(/(\d+)/);
+        return match ? Number(match[1]) : 0;
+      }
+
+      function compareSimulationsNewestFirst(left, right) {
+        const byCreatedAt = simulationCreatedAtMs(right) - simulationCreatedAtMs(left);
+        if (byCreatedAt) return byCreatedAt;
+        return String(right && right.id ? right.id : "").localeCompare(
+          String(left && left.id ? left.id : ""),
+          undefined,
+          { numeric: true },
+        );
+      }
+
+      function normalizeSimulationName(value) {
+        return String(value || "").trim().replace(/\s+/g, " ");
+      }
+
+      function extractHostnameFromValue(value) {
+        const raw = String(value || "").trim();
+        if (!raw) return "";
+
+        const candidates = raw.includes("://") ? [raw] : [`http://${raw}`];
+        for (const candidate of candidates) {
+          try {
+            const parsed = new URL(candidate);
+            if (parsed.hostname) return parsed.hostname.toLowerCase();
+          } catch {
+            // Ignore parse errors and keep trying.
+          }
+        }
+
+        const match = raw.match(/^(?:[a-z][a-z0-9+.-]*:\/\/)?(\[[^\]]+\]|[^/:?#]+)(?::\d+)?(?:[/?#]|$)/i);
+        if (!match) return "";
+        return match[1].replace(/^\[|\]$/g, "").toLowerCase();
+      }
+
+      function stripVersionSuffix(name) {
+        return String(name || "").replace(/-v\d+$/i, "");
+      }
+
+      function isSimulationNameTakenLocally(name, excludeId = null) {
+        if (isAdmin) return false;
+        const target = normalizeSimulationName(name).toLowerCase();
+        if (!target) return false;
+
+        for (const sim of simulationsById.values()) {
+          if (sim.id === excludeId) continue;
+          if (normalizeSimulationName(sim.name).toLowerCase() === target) return true;
+        }
+        return false;
+      }
+
+      function ensureUniqueSimulationNameLocally(name, excludeId = null) {
+        const normalized = normalizeSimulationName(name);
+        if (!normalized) return "";
+        if (!isSimulationNameTakenLocally(normalized, excludeId)) return normalized;
+
+        const root = stripVersionSuffix(normalized) || normalized;
+        let version = 1;
+        let candidate = `${root}-v${version}`;
+        while (isSimulationNameTakenLocally(candidate, excludeId)) {
+          version += 1;
+          candidate = `${root}-v${version}`;
+        }
+        return candidate;
+      }
+
+      function buildAutoSimulationName(value, urlType) {
+        const hostname = extractHostnameFromValue(value);
+        if (!hostname) return "";
+        return urlType === "ws" ? `ws-${hostname}` : hostname;
+      }
+
+      function suggestSimulationNameFromUrl(value, urlType, excludeId = null) {
+        const baseName = buildAutoSimulationName(value, urlType);
+        if (!baseName) return "";
+        return ensureUniqueSimulationNameLocally(baseName, excludeId);
+      }
+
+      function sortCheckedTerminalIdsInPlace() {
+        checkedTerminalIds.sort((leftId, rightId) => {
+          const left = simulationsById.get(leftId) || { id: leftId };
+          const right = simulationsById.get(rightId) || { id: rightId };
+          return compareSimulationsNewestFirst(left, right);
+        });
+      }
+
+      function copyIconSvg() {
+        return `
+          <svg viewBox="0 0 24 24" aria-hidden="true">
+            <rect x="9" y="9" width="11" height="11" rx="2"></rect>
+            <path d="M6 15H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h8a2 2 0 0 1 2 2v1"></path>
+          </svg>
+        `;
+      }
+
+      function copiedIconSvg() {
+        return `
+          <svg viewBox="0 0 24 24" aria-hidden="true">
+            <path d="M20 6 9 17l-5-5"></path>
+          </svg>
+        `;
+      }
+
+      function editIconSvg() {
+        return `
+          <svg viewBox="0 0 24 24" aria-hidden="true">
+            <path d="m12 20 8-8"></path>
+            <path d="M17.5 6.5a2.1 2.1 0 1 1 3 3L9 21l-4 1 1-4Z"></path>
+          </svg>
+        `;
+      }
+
+      function tickIconSvg() {
+        return `
+          <svg viewBox="0 0 24 24" aria-hidden="true">
+            <path d="M20 6 9 17l-5-5"></path>
+          </svg>
+        `;
+      }
+
+      function isCopyFeedbackActive(key) {
+        return Boolean(key) && (copyFeedbackUntil.get(key) || 0) > Date.now();
+      }
+
+      function updateCopyIconButton(button, label, copied) {
+        button.classList.toggle("is-copied", copied);
+        button.title = copied ? "Copied" : label;
+        button.setAttribute("aria-label", copied ? "Copied" : label);
+        button.innerHTML = copied ? copiedIconSvg() : copyIconSvg();
+      }
+
+      function scheduleCopyFeedbackReset(key, button, label) {
+        if (!key) return;
+        const existingTimer = copyFeedbackTimers.get(key);
+        if (existingTimer) clearTimeout(existingTimer);
+        const remainingMs = Math.max(0, (copyFeedbackUntil.get(key) || 0) - Date.now());
+        const timer = setTimeout(() => {
+          copyFeedbackUntil.delete(key);
+          copyFeedbackTimers.delete(key);
+          if (button && button.isConnected) updateCopyIconButton(button, label, false);
+        }, remainingMs);
+        copyFeedbackTimers.set(key, timer);
+      }
+
+      function createCopyIconButton(value, label, key) {
+        const button = document.createElement("button");
+        button.type = "button";
+        button.className = "copy-icon-button";
+        const copyValue = String(value || "");
+        button.disabled = !copyValue;
+        updateCopyIconButton(button, label, isCopyFeedbackActive(key));
+        if (isCopyFeedbackActive(key)) scheduleCopyFeedbackReset(key, button, label);
+        button.addEventListener("click", async (event) => {
+          event.stopPropagation();
+          if (!copyValue) return;
+          try {
+            await navigator.clipboard.writeText(copyValue);
+            if (key) copyFeedbackUntil.set(key, Date.now() + COPY_FEEDBACK_MS);
+            updateCopyIconButton(button, label, true);
+            scheduleCopyFeedbackReset(key, button, label);
+          } catch { /* ignore */ }
+        });
+        return button;
+      }
+
+      function createEndpointInline(value, label, key) {
+        const wrapper = document.createElement("span");
+        wrapper.className = "endpoint-inline";
+
+        const text = document.createElement("span");
+        text.className = "endpoint-text";
+        text.textContent = value || "—";
+        text.title = value || "";
+
+        wrapper.appendChild(createCopyIconButton(value, label, key));
+        wrapper.appendChild(text);
+        return wrapper;
+      }
+
+      function updateNameSuggestionFromUrl({ force = false } = {}) {
+        if (!nameInput || !simulateUrlInput) return;
+        autoSuggestedName = suggestSimulationNameFromUrl(simulateUrlInput.value, urlTypeInput ? urlTypeInput.value : "");
+        const currentName = normalizeSimulationName(nameInput.value);
+
+        if (!autoSuggestedName) {
+          if (force || isNameAutoManaged || !currentName) {
+            nameInput.value = "";
+            isNameAutoManaged = true;
+          }
+          return;
+        }
+
+        if (force || isNameAutoManaged || !currentName) {
+          nameInput.value = autoSuggestedName;
+          isNameAutoManaged = true;
+          return;
+        }
+
+        if (currentName === autoSuggestedName) isNameAutoManaged = true;
+      }
+
+      function resetNameInput() {
+        autoSuggestedName = "";
+        isNameAutoManaged = true;
+        if (nameInput) nameInput.value = "";
+      }
+
+      function handleNameInputChange() {
+        const currentName = normalizeSimulationName(nameInput.value);
+        if (!currentName) {
+          isNameAutoManaged = true;
+          autoSuggestedName = suggestSimulationNameFromUrl(
+            simulateUrlInput ? simulateUrlInput.value : "",
+            urlTypeInput ? urlTypeInput.value : "",
+          );
+          return;
+        }
+        isNameAutoManaged = currentName === autoSuggestedName;
+      }
+
+      function beginSimulationRename(sim) {
+        editingSimulationId = sim.id;
+        editingSimulationName = sim.name || "";
+        editingNameSelectionStart = editingSimulationName.length;
+        editingNameSelectionEnd = editingSimulationName.length;
+        formError.textContent = "";
+        render();
+      }
+
+      function cancelSimulationRename() {
+        editingSimulationId = null;
+        editingSimulationName = "";
+        editingNameSelectionStart = null;
+        editingNameSelectionEnd = null;
+        renamingSimulationId = null;
+      }
+
+      async function saveSimulationRename(sim) {
+        if (renamingSimulationId === sim.id) return;
+        renamingSimulationId = sim.id;
+        formError.textContent = "";
+        try {
+          await api(`/api/simulations/${sim.id}`, {
+            method: "PATCH",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ name: normalizeSimulationName(editingSimulationName) }),
+          });
+          cancelSimulationRename();
+          await render();
+        } catch (error) {
+          renamingSimulationId = null;
+          formError.textContent = `⚠ ${error.error || "Failed to rename simulation"}`;
+          render();
+        }
+      }
+
+      function createNameActionButton(className, label, iconSvg) {
+        const button = document.createElement("button");
+        button.type = "button";
+        button.className = `inline-icon-button ${className}`;
+        button.title = label;
+        button.setAttribute("aria-label", label);
+        button.innerHTML = iconSvg;
+        return button;
+      }
+
+      function createNameCellContent(sim) {
+        if (editingSimulationId === sim.id) {
+          const editor = document.createElement("div");
+          editor.className = "name-editor";
+
+          const input = document.createElement("input");
+          input.type = "text";
+          input.className = "name-editor-input";
+          input.value = editingSimulationName;
+          input.placeholder = suggestSimulationNameFromUrl(sim.simulateUrl, sim.urlType, sim.id) || "simulation name";
+          input.disabled = renamingSimulationId === sim.id;
+          input.addEventListener("input", (event) => {
+            editingSimulationName = event.target.value;
+            editingNameSelectionStart = input.selectionStart;
+            editingNameSelectionEnd = input.selectionEnd;
+          });
+          input.addEventListener("click", (event) => event.stopPropagation());
+          input.addEventListener("keyup", () => {
+            editingNameSelectionStart = input.selectionStart;
+            editingNameSelectionEnd = input.selectionEnd;
+          });
+          input.addEventListener("select", () => {
+            editingNameSelectionStart = input.selectionStart;
+            editingNameSelectionEnd = input.selectionEnd;
+          });
+          input.addEventListener("keydown", (event) => {
+            if (event.key === "Enter") {
+              event.preventDefault();
+              saveSimulationRename(sim);
+            }
+            if (event.key === "Escape") {
+              event.preventDefault();
+              cancelSimulationRename();
+              render();
+            }
+          });
+
+          const saveButton = createNameActionButton(
+            "name-save-button",
+            "Save simulation name",
+            tickIconSvg(),
+          );
+          saveButton.disabled = renamingSimulationId === sim.id;
+          saveButton.addEventListener("click", (event) => {
+            event.stopPropagation();
+            saveSimulationRename(sim);
+          });
+
+          editor.appendChild(input);
+          editor.appendChild(saveButton);
+
+          requestAnimationFrame(() => {
+            if (!input.isConnected || editingSimulationId !== sim.id) return;
+            input.focus();
+            const start = Number.isInteger(editingNameSelectionStart)
+              ? editingNameSelectionStart
+              : input.value.length;
+            const end = Number.isInteger(editingNameSelectionEnd)
+              ? editingNameSelectionEnd
+              : start;
+            input.setSelectionRange(start, end);
+          });
+
+          return editor;
+        }
+
+        const view = document.createElement("div");
+        view.className = "name-cell-view";
+
+        const editButton = createNameActionButton(
+          "name-edit-button",
+          `Edit name for ${sim.name}`,
+          editIconSvg(),
+        );
+        editButton.addEventListener("click", (event) => {
+          event.stopPropagation();
+          beginSimulationRename(sim);
+        });
+
+        const text = document.createElement("span");
+        text.className = "name-cell-text";
+        text.textContent = sim.name;
+        text.title = sim.name;
+
+        view.appendChild(editButton);
+        view.appendChild(text);
+        return view;
+      }
+
+      function updateSimulateUrlPlaceholder() {
+        if (!simulateUrlInput || !urlTypeInput) return;
+        if (urlTypeInput.value === "db") {
+          simulateUrlInput.placeholder = "db.example.com:5432  or  tcp://db.example.com:5432";
+          return;
+        }
+        simulateUrlInput.placeholder = "https://rpc.example.com  or  wss://...";
+      }
+
+      function inferUrlTypeFromSimulateUrl(value) {
+        const normalized = String(value || "").trim().toLowerCase();
+        if (!normalized) return null;
+        if (/^wss?:\/\//.test(normalized)) return "ws";
+        if (/^https?:\/\//.test(normalized)) return "http";
+
+        // Disabled with the hidden DataBase <option> above — returning "db" here would set
+        // urlType to a value the <select> no longer has, blanking a required field.
+        const schemeMatch = normalized.match(/^([a-z][a-z0-9+.-]*):\/\//);
+        if (schemeMatch) return null; // was: return "db";
+
+        const bareHostPort = normalized.match(/^[a-z0-9.-]+:(\d{2,5})(?:\/.*)?$/i);
+        if (!bareHostPort) return null;
+
+        const port = Number(bareHostPort[1]);
+        if ([1433, 1521, 3306, 5432, 5672, 6379, 9042, 27017].includes(port)) {
+          return null; // was: return "db"; — disabled with the hidden DataBase option
+        }
+        return null;
+      }
+
+      function syncUrlTypeFromSimulateUrl() {
+        if (!simulateUrlInput || !urlTypeInput) return;
+        const inferred = inferUrlTypeFromSimulateUrl(simulateUrlInput.value);
+        if (inferred && urlTypeInput.value !== inferred) {
+          urlTypeInput.value = inferred;
+          updateSimulateUrlPlaceholder();
+        }
+        updateNameSuggestionFromUrl();
+      }
+
+      /* ── Port suggestion ────────────────────────────────────── */
+      async function applyDefaultPort(from = 1000) {
+        const result = await api(`/api/ports/suggest?from=${from}`);
+        portInput.value = result.suggested_port;
+      }
+
+      async function applyFormDefaults() {
+        resetNameInput();
+        await applyDefaultPort(1000);
+      }
+
+      /* ── Terminal layout columns ────────────────────────────── */
+      function applyTheme(theme) {
+        const normalized = theme === "light" ? "light" : "dark";
+        document.documentElement.dataset.theme = normalized;
+        if (!themeToggle) return;
+        const next = normalized === "dark" ? "light" : "dark";
+        themeToggle.setAttribute("aria-label", `Switch to ${next} mode`);
+        themeToggle.title = `Switch to ${next} mode`;
+      }
+
+      function initTheme() {
+        const saved = localStorage.getItem(themeStorageKey);
+        if (saved === "dark" || saved === "light") {
+          applyTheme(saved);
+          return;
+        }
+        applyTheme("dark");
+      }
+
+      function toggleTheme() {
+        const current = document.documentElement.dataset.theme === "light" ? "light" : "dark";
+        const next = current === "dark" ? "light" : "dark";
+        applyTheme(next);
+        localStorage.setItem(themeStorageKey, next);
+      }
+
+      function setTerminalColumns(cols) {
+        const value = [1, 2, 3, 4].includes(cols) ? cols : 2;
+        document.documentElement.style.setProperty("--terminal-cols", String(value));
+        for (const button of layoutButtons) {
+          button.classList.toggle("is-active", Number(button.dataset.cols) === value);
+        }
+        localStorage.setItem(terminalColsStorageKey, String(value));
+      }
+
+      /* ── Terminal height (CSS var + display label) ──────────── */
+      function setTerminalHeight(height) {
+        const clamped = Math.max(120, Math.min(720, Number(height) || 210));
+        document.documentElement.style.setProperty("--terminal-height", `${clamped}px`);
+        // Update the readout label in the panel header
+        if (terminalHeightVal) terminalHeightVal.textContent = `${clamped}px`;
+        localStorage.setItem(terminalHeightStorageKey, String(clamped));
+      }
+
+      /* KEY FIX: after adjusting height, re-render the deck so
+         any existing terminal-body elements pick up the new height
+         (belt-and-suspenders alongside the CSS variable update).  */
+      function adjustTerminalHeight(delta) {
+        const current = Number(localStorage.getItem(terminalHeightStorageKey) || "210");
+        setTerminalHeight(current + delta);
+        renderTerminalDeck(); /* forces DOM re-creation with new height var */
+      }
+
+      /* ── Persistence helpers ────────────────────────────────── */
+      function saveCheckedTerminalIds() {
+        localStorage.setItem(terminalSelectionStorageKey, JSON.stringify(checkedTerminalIds));
+      }
+
+      function loadPanelState() {
+        const raw = localStorage.getItem(panelStateStorageKey);
+        if (!raw) return {};
+        try {
+          const parsed = JSON.parse(raw);
+          return parsed && typeof parsed === "object" ? parsed : {};
+        } catch { return {}; }
+      }
+
+      function savePanelState(state) {
+        localStorage.setItem(panelStateStorageKey, JSON.stringify(state));
+      }
+
+      function setPanelCollapsed(panelBody, toggle, collapsed) {
+        panelBody.classList.toggle("is-collapsed", collapsed);
+        toggle.textContent = collapsed ? "Expand" : "Minimize";
+        toggle.setAttribute("aria-expanded", String(!collapsed));
+      }
+
+      function togglePanelCollapsed(panelBody, toggle, panelState) {
+        const collapsed = !panelBody.classList.contains("is-collapsed");
+        setPanelCollapsed(panelBody, toggle, collapsed);
+        panelState[panelBody.id] = collapsed;
+        savePanelState(panelState);
+      }
+
+      function loadCheckedTerminalIds() {
+        const raw = localStorage.getItem(terminalSelectionStorageKey);
+        if (!raw) return;
+        try {
+          const parsed = JSON.parse(raw);
+          if (!Array.isArray(parsed)) return;
+          checkedTerminalIds.splice(0, checkedTerminalIds.length, ...parsed.map(String));
+        } catch { /* ignore */ }
+      }
+
+      function setTerminalStreamState(simId, isOnline) {
+        const next = Boolean(isOnline);
+        if (terminalStreamUp.get(simId) === next) return false;
+        terminalStreamUp.set(simId, next);
+        return true;
+      }
+
+      function markTerminalDisconnected(simId) {
+        terminalNeedsResync.add(simId);
+        terminalLastSeenAt.delete(simId);
+        // Keep existing logs visible while disconnected; only flip stream state.
+        return setTerminalStreamState(simId, false);
+      }
+
+      function markTerminalActivity(simId) {
+        terminalLastSeenAt.set(simId, Date.now());
+        return setTerminalStreamState(simId, true);
+      }
+
+      async function resyncTerminalIfNeeded(simId) {
+        if (!terminalNeedsResync.has(simId)) return;
+        if (!checkedTerminalIds.includes(simId)) {
+          terminalNeedsResync.delete(simId);
+          return;
+        }
+        if (terminalResyncInFlight.has(simId)) return;
+
+        terminalResyncInFlight.add(simId);
+        try {
+          await refreshTerminal(simId);
+          terminalNeedsResync.delete(simId);
+        } finally {
+          terminalResyncInFlight.delete(simId);
+        }
+      }
+
+      function markAllCheckedTerminalsOffline() {
+        let changed = false;
+        for (const id of checkedTerminalIds) {
+          if (markTerminalDisconnected(id)) changed = true;
+        }
+        if (changed) renderTerminalDeck();
+      }
+
+      function evaluateTerminalStreamHealth() {
+        const now = Date.now();
+        let changed = false;
+        for (const id of checkedTerminalIds) {
+          const lastSeen = terminalLastSeenAt.get(id) || 0;
+          const online = Boolean(_sseSource) && now - lastSeen <= TERMINAL_STALE_MS;
+          if (online) {
+            if (setTerminalStreamState(id, true)) changed = true;
+          } else if (markTerminalDisconnected(id)) {
+            changed = true;
+          }
+        }
+        if (changed) renderTerminalDeck();
+      }
+
+      /* ── Select-all checkbox state ──────────────────────────── */
+      function updateSelectAllState() {
+        const total = simulationsById.size;
+        if (!total) {
+          toggleAllTerminals.checked       = false;
+          toggleAllTerminals.indeterminate = false;
+          return;
+        }
+        let selected = 0;
+        for (const id of simulationsById.keys()) {
+          if (checkedTerminalIds.includes(id)) selected += 1;
+        }
+        toggleAllTerminals.checked       = selected === total;
+        toggleAllTerminals.indeterminate = selected > 0 && selected < total;
+      }
+
+      /* ── State badge element ────────────────────────────────── */
+      function stateBadge(state) {
+        const el  = document.createElement("span");
+        el.className = `state-badge state-${state}`;
+        const pip = document.createElement("span");
+        pip.className = "pip";
+        el.appendChild(pip);
+        el.appendChild(document.createTextNode(state));
+        return el;
+      }
+
+      /* ── Render terminal deck ───────────────────────────────── */
+      function renderTerminalDeck() {
+        terminalDeck.innerHTML = "";
+
+        if (!checkedTerminalIds.length) {
+          const empty = document.createElement("div");
+          empty.className   = "terminal-empty";
+          empty.textContent = "enable terminal for a simulation to see its logs here";
+          terminalDeck.appendChild(empty);
+          return;
+        }
+
+        for (const simId of checkedTerminalIds) {
+          const sim = simulationsById.get(simId);
+          if (!sim) continue;
+
+          const card = document.createElement("div");
+          card.className = "terminal-card";
+
+          /* ── Head ── */
+          const head = document.createElement("div");
+          head.className = "terminal-head";
+
+          const titleWrap = document.createElement("div");
+          titleWrap.className = "terminal-title-wrap";
+
+          const dots = document.createElement("div");
+          dots.className = "term-dots";
+          /* ["term-dot-r","term-dot-y","term-dot-g"].forEach(c => {
+            const d = document.createElement("span");
+            d.className = `term-dot ${c}`;
+            dots.appendChild(d);
+          }); */
+
+          const title = document.createElement("span");
+          title.className   = "terminal-title";
+          title.textContent = `${sim.id} · ${sim.name}`;
+          const endpoint = createEndpointInline(
+            getSimulatedEndpoint(sim),
+            `Copy simulated endpoint for ${sim.name}`,
+            `terminal-endpoint:${sim.id}`,
+          );
+          endpoint.classList.add("terminal-endpoint");
+          endpoint.querySelector(".endpoint-text").classList.add("terminal-endpoint-text");
+          const streamDot = document.createElement("span");
+          const isOnline = terminalStreamUp.get(simId) === true;
+          streamDot.className = `terminal-stream-dot ${isOnline ? "is-online" : "is-offline"}`;
+          streamDot.title = isOnline ? "streaming: connected" : "streaming: disconnected";
+
+          titleWrap.appendChild(dots);
+          titleWrap.appendChild(streamDot);
+          titleWrap.appendChild(title);
+          titleWrap.appendChild(endpoint);
+
+          /* ── Action buttons in card header ── */
+          const actionWrap = document.createElement("div");
+          actionWrap.className = "terminal-actions";
+
+          const downBtn = document.createElement("button");
+          downBtn.className   = "btn-down";
+          downBtn.textContent = "Down";
+          downBtn.addEventListener("click", async () => {
+            try { await api(`/api/simulations/${sim.id}/down`, { method: "POST" }); await render(); } catch { /* ignore */ }
+          });
+
+          const upBtn = document.createElement("button");
+          upBtn.className   = "btn-up";
+          upBtn.textContent = "Up";
+          upBtn.addEventListener("click", async () => {
+            try { await api(`/api/simulations/${sim.id}/up`, { method: "POST" }); await render(); } catch { /* ignore */ }
+          });
+
+          const deleteBtn = document.createElement("button");
+          deleteBtn.className   = "btn-delete";
+          deleteBtn.textContent = "Delete";
+          deleteBtn.addEventListener("click", async () => {
+            try { await api(`/api/simulations/${sim.id}`, { method: "DELETE" }); await render(); } catch { /* ignore */ }
+          });
+
+          const clearBtn = document.createElement("button");
+          clearBtn.className   = "terminal-clear";
+          clearBtn.textContent = "clear";
+          clearBtn.addEventListener("click", () => {
+            terminalBuffers.set(simId, []);
+            renderTerminalDeck();
+          });
+
+          const refreshBtn = document.createElement("button");
+          refreshBtn.className = "terminal-refresh";
+          refreshBtn.title     = "Refresh — reconnect log stream and replay backlog";
+          refreshBtn.innerHTML = `<svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><polyline points="23 4 23 10 17 10"/><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"/></svg>`;
+          refreshBtn.addEventListener("click", () => refreshTerminal(simId));
+
+          actionWrap.appendChild(downBtn);
+          actionWrap.appendChild(upBtn);
+          actionWrap.appendChild(deleteBtn);
+          actionWrap.appendChild(clearBtn);
+          actionWrap.appendChild(refreshBtn);
+          head.appendChild(titleWrap);
+          head.appendChild(actionWrap);
+
+          /* ── Log body ── */
+          const body = document.createElement("div");
+          body.className = "terminal-body";
+
+          const entries = terminalBuffers.get(simId) || [];
+          for (const entry of entries) {
+            const line = document.createElement("div");
+            line.className   = `line line-${entry.stream}`;
+            line.textContent = `[${entry.at}] [${entry.stream}] ${entry.line}`;
+            body.appendChild(line);
+          }
+          requestAnimationFrame(() => { body.scrollTop = body.scrollHeight; });
+
+          card.appendChild(head);
+          card.appendChild(body);
+          terminalDeck.appendChild(card);
+        }
+      }
+
+      /* ── Add incoming SSE log line ──────────────────────────── */
+      function addLog(entry) {
+        if (!checkedTerminalIds.includes(entry.id)) return;
+        markTerminalActivity(entry.id);
+        const entries = terminalBuffers.get(entry.id) || [];
+        entries.push(entry);
+        if (entries.length > 300) entries.shift();
+        terminalBuffers.set(entry.id, entries);
+        renderTerminalDeck();
+      }
+
+      /* ── Generic action button factory ─────────────────────── */
+      function actionButton(text, className, fn) {
+        const btn = document.createElement("button");
+        btn.textContent = text;
+        if (className) btn.className = className;
+        btn.onclick = fn;
+        return btn;
+      }
+
+      /* ── Main render ────────────────────────────────────────── */
+      async function render() {
+        const checkedBeforeRender = checkedTerminalIds.join(",");
+
+        let items;
+        try {
+          items = (await api("/api/simulations")).slice().sort(compareSimulationsNewestFirst);
+        } catch (error) {
+          /* Admin mode without a usable key: say so rather than showing an
+             empty table and failing silently on every poll. */
+          if (isAdmin) {
+            formError.textContent =
+              "⚠ Admin mode is not active for this session. Open the page once with the admin key.";
+          }
+          return;
+        }
+        simulationsById = new Map(items.map(sim => [sim.id, sim]));
+        rows.innerHTML = "";
+
+        if (editingSimulationId && !simulationsById.has(editingSimulationId)) {
+          cancelSimulationRename();
+        }
+
+        /* Prune removed simulations from checked list */
+        for (let i = checkedTerminalIds.length - 1; i >= 0; i -= 1) {
+          const id = checkedTerminalIds[i];
+          if (!simulationsById.has(id)) {
+            checkedTerminalIds.splice(i, 1);
+            terminalBuffers.delete(id);
+            terminalLastSeenAt.delete(id);
+            terminalStreamUp.delete(id);
+            terminalNeedsResync.delete(id);
+            terminalResyncInFlight.delete(id);
+          }
+        }
+        for (const id of checkedTerminalIds) {
+          if (!terminalBuffers.has(id)) {
+            const sim = simulationsById.get(id);
+            if (sim) terminalBuffers.set(id, (sim.logs || []).slice(-300));
+          }
+          if (!terminalStreamUp.has(id)) terminalStreamUp.set(id, false);
+        }
+        sortCheckedTerminalIdsInPlace();
+        updateNameSuggestionFromUrl();
+        saveCheckedTerminalIds();
+        const checkedAfterRender = checkedTerminalIds.join(",");
+        if (checkedAfterRender !== checkedBeforeRender) {
+          syncSseSubscription();
+        }
+
+        /* Empty state row */
+        if (!items.length) {
+          const emptyRow = document.createElement("tr");
+          emptyRow.className = "empty-row";
+          emptyRow.innerHTML = `<td colspan="10">no simulations running — create one above</td>`;
+          rows.appendChild(emptyRow);
+        }
+
+        for (const sim of items) {
+          const tr = document.createElement("tr");
+          tr.innerHTML = `
+            <td class="mono">${sim.id}</td>
+            <td class="name-cell"></td>
+            <td class="mono">${sim.urlType}</td>
+            <td class="mono">${sim.port}</td>
+            <td class="mono url-cell endpoint-cell"></td>
+            <td class="mono url-cell live-url-cell"></td>
+            <td class="state-cell"></td>
+            <td class="mono">${sim.pid ?? "—"}</td>
+            <td class="show-cell"></td>
+            <td class="actions"></td>
+          `;
+
+          tr.querySelector(".name-cell").appendChild(createNameCellContent(sim));
+          tr.querySelector(".state-cell").appendChild(stateBadge(sim.state));
+          tr.querySelector(".endpoint-cell").appendChild(
+            createEndpointInline(
+              getSimulatedEndpoint(sim),
+              `Copy simulated endpoint for ${sim.name}`,
+              `table-endpoint:${sim.id}`,
+            ),
+          );
+          tr.querySelector(".live-url-cell").appendChild(
+            createEndpointInline(
+              sim.simulateUrl,
+              `Copy live URL for ${sim.name}`,
+              `table-live-url:${sim.id}`,
+            ),
+          );
+
+          const showCell   = tr.querySelector("td.show-cell");
+          const actionCell = tr.querySelector("td.actions");
+
+          const checkbox = document.createElement("input");
+          checkbox.type  = "checkbox";
+          checkbox.style.width       = "auto";
+          checkbox.style.accentColor = "var(--accent)";
+          checkbox.checked = checkedTerminalIds.includes(sim.id);
+          checkbox.addEventListener("change", () => {
+            if (checkbox.checked) {
+              if (!checkedTerminalIds.includes(sim.id)) checkedTerminalIds.push(sim.id);
+              if (!terminalBuffers.has(sim.id))
+                terminalBuffers.set(sim.id, (sim.logs || []).slice(-300));
+              if (!terminalStreamUp.has(sim.id)) terminalStreamUp.set(sim.id, false);
+            } else {
+              const idx = checkedTerminalIds.indexOf(sim.id);
+              if (idx >= 0) checkedTerminalIds.splice(idx, 1);
+              terminalBuffers.delete(sim.id);
+              terminalLastSeenAt.delete(sim.id);
+              terminalStreamUp.delete(sim.id);
+              terminalNeedsResync.delete(sim.id);
+              terminalResyncInFlight.delete(sim.id);
+            }
+            sortCheckedTerminalIdsInPlace();
+            saveCheckedTerminalIds();
+            updateSelectAllState();
+            syncSseSubscription(); // req 6: resubscribe with new id set
+            renderTerminalDeck();
+          });
+          showCell.appendChild(checkbox);
+
+          actionCell.appendChild(actionButton("Down", "warn", async () => {
+            await api(`/api/simulations/${sim.id}/down`, { method: "POST" }); render();
+          }));
+          actionCell.appendChild(actionButton("Up", "up-btn", async () => {
+            await api(`/api/simulations/${sim.id}/up`, { method: "POST" }); render();
+          }));
+          actionCell.appendChild(actionButton("Delete", "alt", async () => {
+            await api(`/api/simulations/${sim.id}`, { method: "DELETE" }); render();
+          }));
+
+          rows.appendChild(tr);
+        }
+
+        updateSelectAllState();
+        renderTerminalDeck();
+      }
+
+      /* ── Custom JSON & Error Suggestion Presets ─────────────── */
+      const DEFAULT_CUSTOM_JSON = {
+        error: "Internal Server Error",
+        message: "Service unavailable (simulated)",
+        code: "SERVER_ERROR",
+        status: 500
+      };
+
+      const ERROR_PRESETS = [
+        // 500-level errors (first 5)
+        {
+          status: 500,
+          plain: "Service unavailable (simulated)",
+          json: {
+            error: "Internal Server Error",
+            message: "An unexpected error occurred while processing your request.",
+            code: "INTERNAL_SERVER_ERROR",
+            status: 500
+          }
+        },
+        {
+          status: 502,
+          plain: "Bad Gateway: Invalid response from upstream server",
+          json: {
+            error: "Bad Gateway",
+            message: "The proxy received an invalid response from the upstream service.",
+            code: "BAD_GATEWAY",
+            status: 502
+          }
+        },
+        {
+          status: 503,
+          plain: "Service Unavailable: Upstream overloaded or in maintenance",
+          json: {
+            error: "Service Unavailable",
+            message: "The service is temporarily unable to handle the request.",
+            code: "SERVICE_UNAVAILABLE",
+            status: 503
+          }
+        },
+        {
+          status: 504,
+          plain: "Gateway Timeout: Upstream server timed out",
+          json: {
+            error: "Gateway Timeout",
+            message: "The upstream server failed to respond within the required timeout window.",
+            code: "GATEWAY_TIMEOUT",
+            status: 504
+          }
+        },
+        {
+          status: 507,
+          plain: "Insufficient Storage: Unable to persist request state",
+          json: {
+            error: "Insufficient Storage",
+            message: "The server is unable to store the request state required to complete execution.",
+            code: "INSUFFICIENT_STORAGE",
+            status: 507
+          }
+        },
+        // 400-level errors (next 5)
+        {
+          status: 400,
+          plain: "Bad Request: Malformed payload or parameters",
+          json: {
+            error: "Bad Request",
+            message: "The request contains invalid payload syntax or missing parameters.",
+            code: "INVALID_PAYLOAD",
+            status: 400
+          }
+        },
+        {
+          status: 401,
+          plain: "Unauthorized: Authentication token missing or invalid",
+          json: {
+            error: "Unauthorized",
+            message: "Authentication credentials were missing or invalid.",
+            code: "UNAUTHORIZED_ACCESS",
+            status: 401
+          }
+        },
+        {
+          status: 403,
+          plain: "Forbidden: Access denied for requested resource",
+          json: {
+            error: "Forbidden",
+            message: "You do not have permission to access the requested resource.",
+            code: "PERMISSION_DENIED",
+            status: 403
+          }
+        },
+        {
+          status: 404,
+          plain: "Not Found: Target endpoint or resource not found",
+          json: {
+            error: "Not Found",
+            message: "The target endpoint or requested resource could not be found.",
+            code: "RESOURCE_NOT_FOUND",
+            status: 404
+          }
+        },
+        {
+          status: 429,
+          plain: "Too Many Requests: Rate limit exceeded",
+          json: {
+            error: "Too Many Requests",
+            message: "Rate limit exceeded. Please wait before retrying.",
+            code: "RATE_LIMIT_EXCEEDED",
+            status: 429
+          }
+        }
+      ];
+      let currentPresetIndex = 0;
+
+      function getErrorPayloadForStatus(statusNum) {
+        const found = ERROR_PRESETS.find(p => p.status === statusNum);
+        if (found) return found;
+        return {
+          status: statusNum,
+          plain: `HTTP ${statusNum} error (simulated)`,
+          json: {
+            error: `Error ${statusNum}`,
+            message: `Simulated error response for HTTP status ${statusNum}`,
+            code: `STATUS_${statusNum}`,
+            status: statusNum
+          }
+        };
+      }
+
+      function validateCustomJson() {
+        if (!customJsonToggle || !customJsonToggle.checked) {
+          if (errorMessageJson) errorMessageJson.classList.remove("is-invalid");
+          if (jsonValidationError) {
+            jsonValidationError.style.display = "none";
+            jsonValidationError.textContent = "";
+          }
+          if (deploySubmitBtn) deploySubmitBtn.disabled = false;
+          return true;
+        }
+
+        const raw = errorMessageJson ? errorMessageJson.value.trim() : "";
+        if (!raw) {
+          if (errorMessageJson) errorMessageJson.classList.add("is-invalid");
+          if (jsonValidationError) {
+            jsonValidationError.textContent = "⚠ JSON response cannot be empty.";
+            jsonValidationError.style.display = "block";
+          }
+          if (deploySubmitBtn) deploySubmitBtn.disabled = true;
+          return false;
+        }
+
+        try {
+          const parsed = JSON.parse(raw);
+          if (typeof parsed !== "object" || parsed === null || Array.isArray(parsed)) {
+            if (errorMessageJson) errorMessageJson.classList.add("is-invalid");
+            if (jsonValidationError) {
+              jsonValidationError.textContent = "⚠ Custom JSON must be a valid JSON object.";
+              jsonValidationError.style.display = "block";
+            }
+            if (deploySubmitBtn) deploySubmitBtn.disabled = true;
+            return false;
+          }
+          if (errorMessageJson) errorMessageJson.classList.remove("is-invalid");
+          if (jsonValidationError) {
+            jsonValidationError.style.display = "none";
+            jsonValidationError.textContent = "";
+          }
+          if (deploySubmitBtn) deploySubmitBtn.disabled = false;
+          return true;
+        } catch (err) {
+          if (errorMessageJson) errorMessageJson.classList.add("is-invalid");
+          if (jsonValidationError) {
+            jsonValidationError.textContent = `⚠ Invalid JSON: ${err.message}`;
+            jsonValidationError.style.display = "block";
+          }
+          if (deploySubmitBtn) deploySubmitBtn.disabled = true;
+          return false;
+        }
+      }
+
+      if (customJsonToggle) {
+        customJsonToggle.addEventListener("change", () => {
+          const errorCodeInput = document.getElementById("errorCode");
+          const statusNum = Number(errorCodeInput ? errorCodeInput.value : 500) || 500;
+          const payload = getErrorPayloadForStatus(statusNum);
+
+          if (customJsonToggle.checked) {
+            if (errorMessageInput) errorMessageInput.style.display = "none";
+            if (errorMessageJson) {
+              errorMessageJson.style.display = "block";
+              errorMessageJson.value = JSON.stringify(payload.json, null, 2);
+            }
+            validateCustomJson();
+          } else {
+            if (errorMessageJson) errorMessageJson.style.display = "none";
+            if (errorMessageInput) {
+              errorMessageInput.style.display = "block";
+              errorMessageInput.value = payload.plain;
+            }
+            if (jsonValidationError) {
+              jsonValidationError.style.display = "none";
+              jsonValidationError.textContent = "";
+            }
+            if (errorMessageJson) errorMessageJson.classList.remove("is-invalid");
+            if (deploySubmitBtn) deploySubmitBtn.disabled = false;
+          }
+        });
+      }
+
+      const errorCodeInputEl = document.getElementById("errorCode");
+      if (errorCodeInputEl) {
+        const syncErrorMessageFromCode = () => {
+          const statusNum = Number(errorCodeInputEl.value || 500);
+          const payload = getErrorPayloadForStatus(statusNum);
+          if (customJsonToggle && customJsonToggle.checked) {
+            if (errorMessageJson) {
+              errorMessageJson.value = JSON.stringify(payload.json, null, 2);
+              validateCustomJson();
+            }
+          } else if (errorMessageInput) {
+            errorMessageInput.value = payload.plain;
+          }
+        };
+        errorCodeInputEl.addEventListener("input", syncErrorMessageFromCode);
+        errorCodeInputEl.addEventListener("change", syncErrorMessageFromCode);
+      }
+
+      if (errorMessageJson) {
+        errorMessageJson.addEventListener("input", validateCustomJson);
+        errorMessageJson.addEventListener("change", validateCustomJson);
+      }
+
+      if (suggestErrorBtn) {
+        suggestErrorBtn.addEventListener("click", () => {
+          const preset = ERROR_PRESETS[currentPresetIndex];
+          const errorCodeInput = document.getElementById("errorCode");
+          if (errorCodeInput) {
+            errorCodeInput.value = preset.status;
+          }
+          if (customJsonToggle && customJsonToggle.checked) {
+            if (errorMessageJson) {
+              errorMessageJson.value = JSON.stringify(preset.json, null, 2);
+              validateCustomJson();
+            }
+          } else if (errorMessageInput) {
+            errorMessageInput.value = preset.plain;
+          }
+          currentPresetIndex = (currentPresetIndex + 1) % ERROR_PRESETS.length;
+        });
+      }
+
+      /* ── Form submit ────────────────────────────────────────── */
+      form.addEventListener("submit", async (event) => {
+        event.preventDefault();
+        formError.textContent = "";
+
+        const isCustomJson = customJsonToggle && customJsonToggle.checked;
+        if (isCustomJson && !validateCustomJson()) {
+          return;
+        }
+
+        const errorMsg = isCustomJson
+          ? (errorMessageJson ? errorMessageJson.value.trim() : "")
+          : (errorMessageInput ? errorMessageInput.value : "");
+
+        const payload = {
+          name:                  normalizeSimulationName(document.getElementById("name").value),
+          url_type:              document.getElementById("urlType").value,
+          port:                  Number(document.getElementById("port").value),
+          simulate_url:          document.getElementById("simulateUrl").value,
+          error_status_code:     Number(document.getElementById("errorCode").value || 500),
+          error_response_message:errorMsg,
+          is_custom_json:        isCustomJson
+        };
+        try {
+          const created = await api("/api/simulations", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify(payload),
+          });
+          if (created && created.id) {
+            const existingIndex = checkedTerminalIds.indexOf(created.id);
+            if (existingIndex >= 0) checkedTerminalIds.splice(existingIndex, 1);
+            checkedTerminalIds.unshift(created.id);
+          }
+          if (created && created.id && !terminalBuffers.has(created.id))
+            terminalBuffers.set(created.id, (created.logs || []).slice(-300));
+          saveCheckedTerminalIds();
+          syncSseSubscription();
+          await render();
+          if (runningTableScroll) runningTableScroll.scrollTop = 0;
+          form.reset();
+          if (customJsonToggle) {
+            customJsonToggle.checked = false;
+            if (errorMessageInput) errorMessageInput.style.display = "block";
+            if (errorMessageJson) {
+              errorMessageJson.style.display = "none";
+              errorMessageJson.value = "";
+              errorMessageJson.classList.remove("is-invalid");
+            }
+            if (jsonValidationError) jsonValidationError.style.display = "none";
+            if (deploySubmitBtn) deploySubmitBtn.disabled = false;
+          }
+          document.getElementById("errorCode").value    = "500";
+          document.getElementById("errorMessage").value = "Service unavailable (simulated)";
+          updateSimulateUrlPlaceholder();
+          await applyFormDefaults();
+        } catch (err) {
+          const suggested = err.suggested_port ? ` — try port ${err.suggested_port}` : "";
+          formError.textContent = `⚠ ${err.error || "Failed to create simulation"}${suggested}`;
+        }
+      });
+
+      /* ── Suggest port ───────────────────────────────────────── */
+      suggestBtn.addEventListener("click", async () => {
+        portInput.value = "";
+        await applyDefaultPort(1000);
+      });
+      if (urlTypeInput) {
+        urlTypeInput.addEventListener("change", () => {
+          updateSimulateUrlPlaceholder();
+          updateNameSuggestionFromUrl();
+        });
+      }
+      if (simulateUrlInput) {
+        simulateUrlInput.addEventListener("input", syncUrlTypeFromSimulateUrl);
+        simulateUrlInput.addEventListener("change", syncUrlTypeFromSimulateUrl);
+      }
+      if (nameInput) {
+        nameInput.addEventListener("input", handleNameInputChange);
+        nameInput.addEventListener("change", handleNameInputChange);
+      }
+
+      /* ── Select-all terminals ───────────────────────────────── */
+      toggleAllTerminals.addEventListener("change", () => {
+        if (toggleAllTerminals.checked) {
+          for (const id of simulationsById.keys()) {
+            if (!checkedTerminalIds.includes(id)) checkedTerminalIds.push(id);
+            if (!terminalBuffers.has(id)) {
+              const sim = simulationsById.get(id);
+              terminalBuffers.set(id, (sim && sim.logs ? sim.logs : []).slice(-300));
+            }
+            if (!terminalStreamUp.has(id)) terminalStreamUp.set(id, false);
+          }
+        } else {
+          for (const id of checkedTerminalIds) {
+            terminalLastSeenAt.delete(id);
+            terminalStreamUp.delete(id);
+            terminalNeedsResync.delete(id);
+            terminalResyncInFlight.delete(id);
+          }
+          checkedTerminalIds.splice(0, checkedTerminalIds.length);
+          terminalBuffers.clear();
+        }
+        saveCheckedTerminalIds();
+        updateSelectAllState();
+        syncSseSubscription(); // req 6: resubscribe with new id set
+        render();
+      });
+
+      /* ── Layout column buttons ──────────────────────────────── */
+      for (const button of layoutButtons) {
+        button.addEventListener("click", () => setTerminalColumns(Number(button.dataset.cols)));
+      }
+
+      /* ── Terminal height +/- ────────────────────────────────── */
+      terminalHeightDec.addEventListener("click", () => adjustTerminalHeight(-30));
+      terminalHeightInc.addEventListener("click", () => adjustTerminalHeight(30));
+      if (themeToggle) themeToggle.addEventListener("click", toggleTheme);
+
+      /* ── Panel collapse toggles ─────────────────────────────── */
+      const panelState = loadPanelState();
+      for (const toggle of panelToggles) {
+        const panelBodyId = toggle.dataset.panelToggle;
+        const panelBody   = document.getElementById(panelBodyId);
+        const panelHeader = toggle.closest(".panel-header");
+        if (!panelBody) continue;
+
+        setPanelCollapsed(panelBody, toggle, Boolean(panelState[panelBodyId]));
+
+        toggle.addEventListener("click", () => {
+          togglePanelCollapsed(panelBody, toggle, panelState);
+        });
+
+        if (panelHeader) {
+          panelHeader.addEventListener("click", (event) => {
+            const clickTarget = event.target instanceof Element ? event.target : null;
+            if (clickTarget && clickTarget.closest("button, input, select, textarea, a")) return;
+            togglePanelCollapsed(panelBody, toggle, panelState);
+          });
+        }
+      }
+
+      /* ── Managed SSE log stream ─────────────────────────────
+         • Connects only when ≥1 terminal is checked
+         • Sends ?ids=... so backend only streams relevant logs
+         • Auto-reconnects on error / stale (no message > 20s)
+         • refreshTerminal(simId) reloads backlog only for that terminal
+      ─────────────────────────────────────────────────────── */
+      let   _sseSource       = null;
+      let   _sseStaleTimer   = null;
+      let   _sseSubscribedIdsKey = "";
+      let   _sseReconnectAttempt = 0;
+      let   _sseLastMessageAt = 0;
+      const SSE_STALE_MS     = 60_000; // reconnect if no event for 60s
+
+      function _sseUrl(replayBacklog = true) {
+        const url = new URL("/api/logs/stream", window.location.origin);
+        if (isAdmin) {
+          url.searchParams.set("role", "admin");
+          if (adminToken) url.searchParams.set("admin_key", adminToken);
+        } else {
+          url.searchParams.set("user_code", userId);
+        }
+        if (checkedTerminalIds.length)
+          url.searchParams.set("ids", checkedTerminalIds.join(","));
+        url.searchParams.set("backlog", replayBacklog ? "50" : "0");
+        return url.toString();
+      }
+
+      function _resetStaleTimer() {
+        clearTimeout(_sseStaleTimer);
+        _sseStaleTimer = setTimeout(() => {
+          console.warn("[SSE] stale — reconnecting");
+          sseDebugLog("warn", "stale timer fired; reconnecting", {
+            staleMs: SSE_STALE_MS,
+            subscribedIds: _sseSubscribedIdsKey,
+            checkedIds: checkedTerminalIds.slice(),
+          });
+          _reconnectSse(false, false);
+        }, SSE_STALE_MS);
+      }
+
+      function _clearStaleTimer() {
+        clearTimeout(_sseStaleTimer);
+        _sseStaleTimer = null;
+      }
+
+      function _closeSse(markOffline = true) {
+        sseDebugLog("log", "closing stream", {
+          markOffline,
+          hasSource: Boolean(_sseSource),
+          subscribedIds: _sseSubscribedIdsKey,
+          checkedIds: checkedTerminalIds.slice(),
+        });
+        _clearStaleTimer();
+        if (_sseSource) {
+          _sseSource.close();
+          _sseSource = null;
+        }
+        _sseSubscribedIdsKey = "";
+        if (markOffline) markAllCheckedTerminalsOffline();
+      }
+
+      function _reconnectSse(clearVisibleBuffers = false, replayBacklog = true) {
+        _closeSse(false);
+        if (!checkedTerminalIds.length) return; // req 4/5: no terminals → stay off
+
+        _sseReconnectAttempt += 1;
+        sseDebugLog("log", "opening stream", {
+          attempt: _sseReconnectAttempt,
+          clearVisibleBuffers,
+          replayBacklog,
+          checkedIds: checkedTerminalIds.slice(),
+          url: _sseUrl(replayBacklog),
+        });
+
+        if (clearVisibleBuffers) {
+          for (const id of checkedTerminalIds) terminalBuffers.set(id, []);
+          renderTerminalDeck();
+        }
+
+        const src = new EventSource(_sseUrl(replayBacklog));
+        _sseSource = src;
+        _sseSubscribedIdsKey = checkedTerminalIds.slice().sort().join(",");
+        _resetStaleTimer(); // start stale watchdog
+
+        src.onopen = () => {
+          _sseReconnectAttempt = 0;
+          sseDebugLog("log", "stream open", {
+            readyState: src.readyState,
+            subscribedIds: _sseSubscribedIdsKey,
+          });
+        };
+
+        src.onmessage = (event) => {
+          const now = Date.now();
+          const sinceLastMs = _sseLastMessageAt ? now - _sseLastMessageAt : null;
+          _sseLastMessageAt = now;
+          _resetStaleTimer(); // any message resets the watchdog
+          let payload = null;
+          try {
+            payload = JSON.parse(event.data);
+          } catch {
+            sseDebugLog("warn", "non-json SSE payload received");
+            return;
+          }
+          if (!payload || typeof payload !== "object") return;
+          if (payload.type === "heartbeat") {
+            const heartbeatIds = new Set(
+              Array.isArray(payload.ids) ? payload.ids.map(String) : [],
+            );
+            sseDebugLog("log", "heartbeat", {
+              sinceLastMs,
+              heartbeatIds: Array.from(heartbeatIds),
+              checkedIds: checkedTerminalIds.slice(),
+            });
+            let changed = false;
+            for (const id of checkedTerminalIds) {
+              const online = heartbeatIds.has(id);
+              if (online) {
+                terminalLastSeenAt.set(id, Date.now());
+                if (setTerminalStreamState(id, true)) changed = true;
+                resyncTerminalIfNeeded(id);
+              } else if (markTerminalDisconnected(id)) {
+                sseDebugLog("warn", "heartbeat missing selected terminal; marked disconnected", {
+                  id,
+                  heartbeatIds: Array.from(heartbeatIds),
+                });
+                changed = true;
+              }
+            }
+            if (changed) renderTerminalDeck();
+            return;
+          }
+          sseDebugLog("log", "log line event", {
+            id: payload.id,
+            stream: payload.stream,
+            sinceLastMs,
+          });
+          addLog(payload);
+        };
+
+        src.onerror = () => {
+          // Browser will retry; we just mark as stale and do our own reconnect
+          console.warn("[SSE] error event — will reconnect");
+          sseDebugLog("error", "stream error", {
+            readyState: src.readyState,
+            subscribedIds: _sseSubscribedIdsKey,
+            checkedIds: checkedTerminalIds.slice(),
+          });
+          _closeSse(false);
+          // Delay a bit before reconnecting to avoid tight loops
+          setTimeout(() => _reconnectSse(false, false), 2000);
+        };
+      }
+
+      /* Call this whenever checkedTerminalIds changes */
+      function syncSseSubscription() {
+        const nextIdsKey = checkedTerminalIds.slice().sort().join(",");
+        if (!checkedTerminalIds.length) {
+          sseDebugLog("log", "sync: no checked terminals; closing stream");
+          _closeSse(); // req 5: disconnect when nothing is checked
+          return;
+        }
+        // Keep existing healthy stream if subscribed ids are unchanged.
+        if (_sseSource && _sseSubscribedIdsKey === nextIdsKey) {
+          sseDebugLog("log", "sync: keeping existing stream", {
+            nextIdsKey,
+            readyState: _sseSource.readyState,
+          });
+          return;
+        }
+        // Resubscribe with new id set without replaying backlog to avoid duplicates
+        sseDebugLog("log", "sync: reconnect due to subscription change", {
+          from: _sseSubscribedIdsKey,
+          to: nextIdsKey,
+          hasSource: Boolean(_sseSource),
+        });
+        _reconnectSse(false, false);
+      }
+
+      /* Refresh a single terminal without touching other terminal buffers */
+      async function refreshTerminal(simId) {
+        // Do not clear visible logs during refresh; swap in latest logs on success.
+        try {
+          const result = await api(`/api/simulations/${simId}/logs`);
+          terminalBuffers.set(simId, (result.logs || []).slice(-300));
+          terminalNeedsResync.delete(simId);
+          renderTerminalDeck();
+        } catch (error) {
+          console.warn(`[Terminal] failed to refresh ${simId}`, error);
+        }
+      }
+
+      /* ── Keep query params when moving between pages ───────── */
+      function syncNavLinks() {
+        if (!window.location.search) return;
+        for (const link of document.querySelectorAll(".main-nav a")) {
+          link.href = link.getAttribute("href") + window.location.search;
+        }
+      }
+
+      async function loadAppVersion() {
+        try {
+          const res = await fetch("/api/version");
+          if (!res.ok) return;
+          const { version } = await res.json();
+          if (version) document.getElementById("appVersion").textContent = `v${version}`;
+        } catch (error) {
+          console.warn("[Version] failed to load", error);
+        }
+      }
+
+      /* ── MCP Client Tabs & AI Auto-Config Prompt ─────────── */
+      function initMcpWebTabs() {
+        const mcpBtns = document.querySelectorAll("[data-mcp-tab]");
+        const mcpPanels = document.querySelectorAll("#mcpPanelBody .mcp-tab-panel");
+
+        mcpBtns.forEach((btn) => {
+          btn.addEventListener("click", () => {
+            const target = btn.dataset.mcpTab;
+            mcpBtns.forEach((b) => b.classList.remove("is-active"));
+            mcpPanels.forEach((p) => {
+              p.classList.remove("is-active");
+              p.hidden = true;
+            });
+            btn.classList.add("is-active");
+            const activePanel = document.getElementById("mcp-web-" + target);
+            if (activePanel) {
+              activePanel.classList.add("is-active");
+              activePanel.hidden = false;
+            }
+          });
+        });
+
+        // Copy buttons inside MCP code blocks on index.html
+        document.querySelectorAll(".copy-mcp-btn").forEach((btn) => {
+          btn.addEventListener("click", async () => {
+            const codeBlock = btn.parentElement.querySelector("pre");
+            if (!codeBlock) return;
+            try {
+              await navigator.clipboard.writeText(codeBlock.textContent);
+              btn.textContent = "copied";
+              btn.classList.add("is-copied");
+              setTimeout(() => {
+                btn.textContent = "copy";
+                btn.classList.remove("is-copied");
+              }, 1600);
+            } catch (err) {
+              console.warn("[MCP Web] copy failed", err);
+            }
+          });
+        });
+
+        // AI Prompt copy button
+        const webPromptBtn = document.getElementById("copyWebAiPromptBtn");
+        const webPromptText = document.getElementById("aiWebPromptText");
+        if (webPromptBtn && webPromptText) {
+          webPromptBtn.addEventListener("click", async () => {
+            try {
+              await navigator.clipboard.writeText(webPromptText.textContent);
+              const label = webPromptBtn.querySelector("span");
+              const original = label ? label.textContent : "Copy Prompt for AI";
+              if (label) label.textContent = "Copied!";
+              webPromptBtn.classList.add("is-copied");
+              setTimeout(() => {
+                if (label) label.textContent = original;
+                webPromptBtn.classList.remove("is-copied");
+              }, 1800);
+            } catch (err) {
+              console.warn("[MCP Web] prompt copy failed", err);
+            }
+          });
+        }
+      }
+
+      /* ── Bootstrap ──────────────────────────────────────────── */
+      const savedCols   = Number(localStorage.getItem(terminalColsStorageKey) || "2");
+      const savedHeight = Number(localStorage.getItem(terminalHeightStorageKey) || "210");
+
+      initTheme();
+      syncNavLinks();
+      loadAppVersion();
+      initMcpWebTabs();
+      setTerminalColumns(savedCols);
+      setTerminalHeight(savedHeight);   /* also updates the readout label */
+      updateSimulateUrlPlaceholder();
+      syncUrlTypeFromSimulateUrl();
+      loadCheckedTerminalIds();
+      applyFormDefaults();
+
+      /* The user code has to exist before the first API call. */
+      ensureUserCode().then(() => {
+        render();
+        syncSseSubscription(); // start SSE only if terminals are already checked
+        setInterval(evaluateTerminalStreamHealth, 5000);
+        setInterval(render, 3000);
+      });
+    </script>
+  </body>
+</html>

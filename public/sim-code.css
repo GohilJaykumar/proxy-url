@@ -1,0 +1,140 @@
+/* ──────────────────────────────────────────────────────────────
+   Sim-Code profile icon — a fixed pill in the top-right corner of
+   every page, showing the code this browser is already using.
+
+   Loaded by index.html and docs.html. Colours fall back to literals
+   so the component still looks right if a page does not define the
+   shared theme variables.
+   ────────────────────────────────────────────────────────────── */
+
+/* The manager UI's old inline "code" chip is superseded by this pill.
+   Its script still runs harmlessly; only the duplicate UI is hidden. */
+#userCodeChip { display: none; }
+
+/* Keep the sticky topbar clear of the fixed pill. */
+.topbar { padding-right: 240px; }
+
+.sim-code-fab {
+  position: fixed;
+  top: 14px;
+  right: 16px;
+  z-index: 80;
+  font-family: inherit;
+}
+
+.sim-code-fab-btn {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 12px 6px 6px;
+  border-radius: 999px;
+  border: 1px solid var(--border, #2a2f3a);
+  background: var(--surface-2, #171a21);
+  color: var(--text, #e6e9ef);
+  font-size: 12px;
+  line-height: 1;
+  cursor: pointer;
+  box-shadow: 0 6px 18px rgba(0, 0, 0, .28);
+  transition: border-color .15s ease, transform .15s ease;
+}
+.sim-code-fab-btn:hover { border-color: var(--accent, #00d4aa); }
+.sim-code-fab-btn:active { transform: translateY(1px); }
+
+.sim-code-avatar {
+  width: 24px;
+  height: 24px;
+  border-radius: 999px;
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: linear-gradient(135deg, #00d4aa 0%, #3b82f6 100%);
+}
+.sim-code-avatar svg {
+  width: 14px; height: 14px;
+  fill: none; stroke: #fff;
+  stroke-width: 2; stroke-linecap: round; stroke-linejoin: round;
+}
+
+.sim-code-label { color: var(--text-muted, #98a2b3); }
+.sim-code-short {
+  font-family: var(--font-mono, ui-monospace, SFMono-Regular, Menlo, monospace);
+  font-weight: 600;
+  letter-spacing: -.2px;
+}
+
+/* Waiting on the server: still working, not a dead end. */
+.sim-code-fab.is-waiting .sim-code-short {
+  color: var(--text-muted, #98a2b3);
+  font-weight: 500;
+  animation: sim-code-pulse 1.4s ease-in-out infinite;
+}
+.sim-code-fab.is-waiting .sim-code-full { color: var(--text-muted, #98a2b3); }
+
+@keyframes sim-code-pulse {
+  0%, 100% { opacity: .55; }
+  50%      { opacity: 1; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .sim-code-fab.is-waiting .sim-code-short { animation: none; }
+}
+
+/* ── Popover ─────────────────────────────────────────────────── */
+.sim-code-pop {
+  position: absolute;
+  top: calc(100% + 8px);
+  right: 0;
+  width: 320px;
+  max-width: calc(100vw - 32px);
+  padding: 14px;
+  border-radius: 12px;
+  border: 1px solid var(--border, #2a2f3a);
+  background: var(--surface, #0f1116);
+  color: var(--text, #e6e9ef);
+  box-shadow: 0 18px 40px rgba(0, 0, 0, .40);
+  font-size: 12px;
+  line-height: 1.55;
+}
+.sim-code-pop[hidden] { display: none; }
+.sim-code-pop h4 { font-size: 12px; font-weight: 700; margin-bottom: 8px; }
+
+.sim-code-full {
+  display: block;
+  word-break: break-all;
+  font-family: var(--font-mono, ui-monospace, SFMono-Regular, Menlo, monospace);
+  font-size: 11px;
+  padding: 8px 10px;
+  border-radius: 8px;
+  border: 1px solid var(--border, #2a2f3a);
+  background: var(--surface-2, #171a21);
+  margin-bottom: 10px;
+}
+
+.sim-code-copy {
+  width: 100%;
+  padding: 7px 10px;
+  border-radius: 8px;
+  border: 1px solid var(--border, #2a2f3a);
+  background: var(--surface-2, #171a21);
+  color: var(--text, #e6e9ef);
+  font-size: 12px;
+  cursor: pointer;
+}
+.sim-code-copy:hover { border-color: var(--accent, #00d4aa); }
+.sim-code-copy.is-copied { border-color: var(--accent, #00d4aa); color: var(--accent, #00d4aa); }
+
+.sim-code-hint {
+  margin-top: 10px;
+  color: var(--text-muted, #98a2b3);
+  font-size: 11px;
+}
+
+/* ── The in-page note that shows the reader their own code ───── */
+.sim-code-note code { word-break: break-all; }
+
+@media (max-width: 900px) {
+  .topbar { padding-right: var(--page-x, 20px); }
+  .sim-code-fab { top: auto; bottom: 16px; }
+  .sim-code-label { display: none; }
+  .sim-code-pop { top: auto; bottom: calc(100% + 8px); }
+}

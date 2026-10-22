@@ -1,0 +1,21 @@
+{
+  "name": "proxy-url",
+  "version": "1.4.0",
+  "main": "rpc_proxy.js",
+  "scripts": {
+    "start": "node manager_server.js",
+    "start:manager": "node manager_server.js",
+    "mcp:stdio": "node mcp_server.js --stdio",
+    "test": "node test/mcp_protocol_test.js && node test/mcp_tools_test.js"
+  },
+  "author": "",
+  "license": "ISC",
+  "description": "",
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.30.0",
+    "express": "^5.2.1",
+    "express-rate-limit": "^7.5.0",
+    "http-proxy-middleware": "^3.0.5",
+    "ws": "^8.18.3"
+  }
+}

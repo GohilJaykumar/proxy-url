@@ -1,0 +1,2274 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>SimProxy — Documentation</title>
+    <style>
+      /* ═══════════════════════════════════════════════════════════
+         DESIGN TOKENS  (mirrors index.html)
+      ═══════════════════════════════════════════════════════════ */
+      :root {
+        --bg:          #0b0d12;
+        --bg-alt:      #0f1117;
+        --surface:     #141720;
+        --surface-2:   #1a1e2b;
+        --surface-3:   #20263a;
+        --border:      #252b3b;
+        --border-soft: #1e2435;
+
+        --text:        #e2e8f4;
+        --text-muted:  #6b7491;
+        --text-dim:    #4a5270;
+
+        --accent:      #00d4aa;
+        --accent-dim:  rgba(0,212,170,.08);
+        --accent-dark: #00b890;
+
+        --green:       #22c55e;
+        --green-bg:    rgba(34,197,94,.10);
+        --red:         #f04f3a;
+        --red-bg:      rgba(240,79,58,.10);
+        --blue:        #3b82f6;
+        --blue-bg:     rgba(59,130,246,.10);
+
+        --font-sans: "Inter","Segoe UI",system-ui,-apple-system,sans-serif;
+        --font-mono: "JetBrains Mono","Fira Code","Cascadia Code",Consolas,monospace;
+
+        --radius-xs: 4px;
+        --radius-sm: 6px;
+        --radius-md: 10px;
+        --radius-lg: 14px;
+
+        --shadow-sm:   0 1px 2px rgba(0,0,0,.3);
+        --shadow-glow: 0 0 20px rgba(0,212,170,.12);
+        --bg-glow-a:   rgba(0,212,170,.06);
+        --bg-glow-b:   rgba(59,130,246,.05);
+        --code-bg:     #0b0d12;
+        --topbar-bg:  rgba(11,13,18,.86);
+
+        --page-x: clamp(14px,3vw,28px);
+        --page-y: 22px;
+      }
+
+      *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+      html { color-scheme: dark; scroll-behavior: smooth; }
+      :root[data-theme="light"] { color-scheme: light; }
+      :root[data-theme="light"] {
+        --bg:          #f3f6fb;
+        --bg-alt:      #ffffff;
+        --surface:     #fdfefe;
+        --surface-2:   #f1f4fa;
+        --surface-3:   #e8edf7;
+        --border:      #ccd6e5;
+        --border-soft: #dde5f2;
+
+        --text:        #1f293b;
+        --text-muted:  #4b5c79;
+        --text-dim:    #697a9a;
+
+        --accent:      #0ea57f;
+        --accent-dim:  rgba(14,165,127,.1);
+        --accent-dark: #0b8c6c;
+
+        --green-bg:    rgba(34,197,94,.12);
+        --red-bg:      rgba(240,79,58,.14);
+        --blue-bg:     rgba(59,130,246,.13);
+        --shadow-sm:   0 1px 2px rgba(15,23,42,.08);
+        --shadow-glow: 0 0 16px rgba(14,165,127,.18);
+        --bg-glow-a:   rgba(14,165,127,.14);
+        --bg-glow-b:   rgba(59,130,246,.12);
+        --code-bg:     #0f172a;
+        --topbar-bg:  rgba(243,246,251,.88);
+      }
+
+      body {
+        margin: 0;
+        height: 100vh;
+        overflow: hidden;
+        font-family: var(--font-sans);
+        font-size: 14px;
+        line-height: 1.6;
+        color: var(--text);
+        background-color: var(--bg);
+        background-image:
+          radial-gradient(ellipse 70% 40% at 0% 0%, var(--bg-glow-a) 0%, transparent 60%),
+          radial-gradient(ellipse 50% 50% at 100% 100%, var(--bg-glow-b) 0%, transparent 60%);
+        background-attachment: fixed;
+        -webkit-font-smoothing: antialiased;
+        -moz-osx-font-smoothing: grayscale;
+      }
+
+      /* An explicit `display` in this stylesheet outranks the user-agent's
+         `[hidden] { display: none }`, which silently un-hides anything the
+         track filter marks hidden (.doc-layout is a grid, .track-divider a
+         flex row, .toc a a block). State it once, for everything. */
+      [hidden] { display: none !important; }
+
+      .page {
+        width: 100%;
+        height: 100vh;
+        overflow-y: auto;
+        overflow-x: hidden;
+        padding: var(--page-y) var(--page-x) 62px;
+        display: block;
+        scroll-padding-top: 78px;
+      }
+      .page::-webkit-scrollbar { width: 5px; }
+      .page::-webkit-scrollbar-track { background: transparent; }
+      .page::-webkit-scrollbar-thumb { background: var(--border); border-radius: 99px; }
+      .page::-webkit-scrollbar-thumb:hover { background: var(--text-dim); }
+
+      /* ═══════════════════════════════════════════════════════════
+         TOPBAR
+      ═══════════════════════════════════════════════════════════ */
+      .topbar {
+        position: sticky;
+        top: calc(var(--page-y) * -1);
+        z-index: 60;
+        display: flex; align-items: center;
+        gap: 22px; flex-wrap: wrap;
+        /* Bleed to the page edges so the sticky bar spans the full width. */
+        margin: calc(var(--page-y) * -1) calc(var(--page-x) * -1) 4px;
+        padding: var(--page-y) var(--page-x) 14px;
+        background: var(--topbar-bg);
+        backdrop-filter: blur(10px);
+        -webkit-backdrop-filter: blur(10px);
+        border-bottom: 1px solid var(--border);
+      }
+      .brand { display: flex; align-items: center; gap: 10px; }
+      .brand-icon {
+        width: 34px; height: 34px; border-radius: var(--radius-md);
+        background: linear-gradient(135deg,#00d4aa 0%,#3b82f6 100%);
+        display: flex; align-items: center; justify-content: center;
+        flex-shrink: 0; box-shadow: var(--shadow-glow);
+      }
+      .brand-icon svg {
+        width: 18px; height: 18px; fill: none; stroke: #fff;
+        stroke-width: 2; stroke-linecap: round; stroke-linejoin: round;
+      }
+      .brand-text h1 { font-size: 16px; font-weight: 700; letter-spacing: -.2px; line-height: 1.2; }
+      .brand-text p { font-size: 11px; color: var(--text-muted); font-family: var(--font-mono); line-height: 1; margin-top: 2px; }
+
+      .topbar-left { display: flex; align-items: center; gap: 22px; flex-wrap: wrap; }
+
+      .main-nav { display: flex; align-items: center; gap: 4px; }
+      .main-nav a {
+        display: inline-flex; align-items: center; gap: 6px;
+        padding: 6px 12px; border-radius: 999px;
+        font-size: 12px; font-weight: 600; text-decoration: none;
+        color: var(--text-muted); border: 1px solid transparent;
+        transition: color .15s, background .15s, border-color .15s;
+      }
+      .main-nav a:hover { color: var(--text); background: var(--surface-2); }
+      .main-nav a.is-active {
+        color: var(--accent); background: var(--accent-dim);
+        border-color: var(--accent);
+      }
+
+      /* ═══════════════════════════════════════════════════════════
+         DOC LAYOUT
+      ═══════════════════════════════════════════════════════════ */
+      .doc-layout {
+        display: grid;
+        grid-template-columns: 260px minmax(0,1fr);
+        gap: clamp(20px,3vw,44px);
+        width: 100%;
+        max-width: 1800px;
+        margin: 20px auto 0;
+        align-items: start;
+      }
+
+      .toc {
+        /* Clears the sticky header (~71px) so it never scrolls underneath. */
+        position: sticky; top: 84px;
+        max-height: calc(100vh - 160px);
+        overflow-y: auto;
+        padding: 14px;
+        border: 1px solid var(--border);
+        border-radius: var(--radius-lg);
+        background: var(--surface);
+      }
+      .toc::-webkit-scrollbar { width: 4px; }
+      .toc::-webkit-scrollbar-thumb { background: var(--border); border-radius: 99px; }
+      .toc-title {
+        font-size: 10px; letter-spacing: .12em; text-transform: uppercase;
+        color: var(--text-dim); font-family: var(--font-mono); margin-bottom: 8px;
+      }
+      .toc a {
+        display: block; padding: 5px 9px; border-radius: var(--radius-sm);
+        font-size: 12.5px; color: var(--text-muted); text-decoration: none;
+        border-left: 2px solid transparent;
+      }
+      .toc a:hover { color: var(--text); background: var(--surface-2); }
+      .toc a.is-current { color: var(--accent); border-left-color: var(--accent); background: var(--accent-dim); }
+      .toc a.toc-group-link {
+        display: block;
+        margin: 14px 0 4px; padding: 4px 9px;
+        font-size: 10px; letter-spacing: .1em; text-transform: uppercase;
+        color: var(--text-dim); font-family: var(--font-mono); font-weight: 600;
+        border-top: 1px solid var(--border-soft); border-left: none;
+        border-radius: 0; padding-top: 10px;
+      }
+      .toc a.toc-group-link:hover { color: var(--accent); background: transparent; }
+      .toc a.toc-group-link.is-current { color: var(--accent); background: transparent; }
+
+      .doc-content { min-width: 0; }
+
+      .hero {
+        padding: 26px 24px;
+        border: 1px solid var(--border);
+        border-radius: var(--radius-lg);
+        background: var(--surface);
+        box-shadow: var(--shadow-sm);
+      }
+      .hero h2 { font-size: 24px; letter-spacing: -.4px; margin-bottom: 8px; }
+      .hero p { color: var(--text-muted); max-width: 94ch; }
+      .hero-chips { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 14px; }
+      .chip {
+        display: inline-flex; align-items: center; gap: 5px;
+        padding: 4px 10px; border-radius: 999px;
+        border: 1px solid var(--border); background: var(--surface-2);
+        font-size: 11px; font-family: var(--font-mono); color: var(--text-muted);
+      }
+
+      section { margin-top: 34px; scroll-margin-top: 78px; }
+      section > h2 {
+        font-size: 18px; letter-spacing: -.2px; padding-bottom: 8px;
+        border-bottom: 1px solid var(--border); margin-bottom: 14px;
+      }
+      section h3 {
+        font-size: 14px; font-weight: 700; color: var(--text);
+        margin-top: 22px; margin-bottom: 8px;
+      }
+      section h4 {
+        font-size: 12px; font-weight: 700; color: var(--text-muted);
+        font-family: var(--font-mono); margin-top: 16px; margin-bottom: 6px;
+      }
+      section p { color: var(--text-muted); margin-bottom: 10px; max-width: 94ch; }
+      section ul, section ol { color: var(--text-muted); margin: 0 0 10px 20px; max-width: 94ch; }
+      section li { margin-bottom: 5px; }
+      section a { color: var(--accent); text-decoration: none; }
+      section a:hover { text-decoration: underline; }
+      strong { color: var(--text); font-weight: 600; }
+
+      code {
+        font-family: var(--font-mono); font-size: 12.5px;
+        background: var(--surface-2); color: var(--accent);
+        border: 1px solid var(--border-soft);
+        padding: 1px 5px; border-radius: var(--radius-xs);
+        word-break: break-word;
+      }
+
+      .code-block { position: relative; margin: 10px 0 16px; }
+      .code-block pre {
+        background: var(--code-bg);
+        border: 1px solid var(--border);
+        border-radius: var(--radius-md);
+        padding: 14px 46px 14px 14px;
+        overflow-x: auto;
+        font-family: var(--font-mono); font-size: 12.5px; line-height: 1.65;
+        color: #cbd5e1;
+      }
+      .code-block pre::-webkit-scrollbar { height: 5px; }
+      .code-block pre::-webkit-scrollbar-thumb { background: var(--border); border-radius: 99px; }
+      .copy-btn {
+        position: absolute; top: 8px; right: 8px;
+        padding: 3px 9px; cursor: pointer;
+        font-family: var(--font-mono); font-size: 10.5px;
+        color: var(--text-dim); background: var(--surface-2);
+        border: 1px solid var(--border); border-radius: var(--radius-xs);
+        opacity: 0; transition: opacity .15s, color .15s;
+      }
+      .code-block:hover .copy-btn, .copy-btn:focus { opacity: 1; }
+      .copy-btn:hover { color: var(--accent); border-color: var(--accent); }
+      .copy-btn.is-copied { color: var(--green); border-color: var(--green); opacity: 1; }
+
+      table {
+        width: 100%; border-collapse: collapse; margin: 10px 0 16px;
+        font-size: 12.5px; border: 1px solid var(--border);
+        border-radius: var(--radius-md); overflow: hidden;
+      }
+      thead th {
+        text-align: left; padding: 9px 12px;
+        background: var(--surface-2); color: var(--text-muted);
+        font-family: var(--font-mono); font-size: 11px; font-weight: 600;
+        letter-spacing: .04em; text-transform: uppercase;
+        border-bottom: 1px solid var(--border);
+      }
+      tbody td {
+        padding: 9px 12px; color: var(--text-muted);
+        border-bottom: 1px solid var(--border-soft); vertical-align: top;
+      }
+      tbody tr:last-child td { border-bottom: none; }
+      tbody tr:hover td { background: var(--surface-2); }
+      td code { white-space: nowrap; }
+
+      /* ── Numbered UI steps ── */
+      .steps { list-style: none; margin: 14px 0 18px; padding: 0; counter-reset: step; }
+      .steps > li {
+        position: relative; counter-increment: step;
+        padding: 0 0 18px 42px; margin: 0;
+        border-left: 1px solid var(--border);
+      }
+      .steps > li:last-child { border-left-color: transparent; padding-bottom: 0; }
+      .steps > li::before {
+        content: counter(step);
+        position: absolute; left: -14px; top: -2px;
+        width: 27px; height: 27px; border-radius: 999px;
+        display: flex; align-items: center; justify-content: center;
+        background: var(--surface-2); border: 1px solid var(--border);
+        color: var(--accent); font-family: var(--font-mono);
+        font-size: 11.5px; font-weight: 700;
+      }
+      .steps h4 {
+        margin: 0 0 4px; font-family: var(--font-sans);
+        font-size: 13.5px; font-weight: 700; color: var(--text);
+        text-transform: none; letter-spacing: 0;
+      }
+      .steps p { margin-bottom: 6px; }
+      .steps ul { margin-top: 6px; }
+
+      /* ── Track dividers: Web UI vs Terminal vs Automation ── */
+      .track-divider {
+        display: flex; align-items: center; gap: 12px; flex-wrap: wrap;
+        margin: 52px 0 2px; padding-top: 22px;
+        border-top: 1px solid var(--border);
+        scroll-margin-top: 78px;
+      }
+      .track-divider-badge {
+        display: inline-flex; align-items: center; justify-content: center;
+        min-width: 30px; height: 30px; padding: 0 9px;
+        border-radius: var(--radius-sm);
+        background: var(--accent-dim); border: 1px solid var(--accent);
+        color: var(--accent); font-family: var(--font-mono);
+        font-size: 12px; font-weight: 700;
+      }
+      .track-divider-title { font-size: 16px; font-weight: 700; letter-spacing: -.2px; color: var(--text); }
+      .track-divider-hint {
+        font-family: var(--font-mono); font-size: 11px; color: var(--text-dim);
+        letter-spacing: .04em;
+      }
+      .track-divider-rule {
+        flex: 1 1 60px; height: 1px; min-width: 40px;
+        background: linear-gradient(90deg, var(--accent) 0%, transparent 100%);
+        opacity: .5;
+      }
+      .track-divider + section { margin-top: 20px; }
+
+      .callout {
+        display: flex; gap: 10px;
+        padding: 12px 14px; margin: 12px 0 16px;
+        border: 1px solid var(--border); border-left-width: 3px;
+        border-radius: var(--radius-md);
+        background: var(--surface); font-size: 13px; color: var(--text-muted);
+      }
+      .callout strong { display: block; margin-bottom: 2px; }
+      .callout.note { border-left-color: var(--blue); background: var(--blue-bg); }
+      .callout.warn { border-left-color: var(--red); background: var(--red-bg); }
+      .callout.tip  { border-left-color: var(--accent); background: var(--accent-dim); }
+      .callout-icon { font-size: 14px; line-height: 1.5; }
+
+      .flow {
+        display: flex; align-items: center; flex-wrap: wrap; gap: 8px;
+        padding: 16px 14px; margin: 12px 0 16px;
+        border: 1px solid var(--border); border-radius: var(--radius-md);
+        background: var(--surface); font-family: var(--font-mono); font-size: 12px;
+      }
+      .flow-node {
+        padding: 7px 12px; border-radius: var(--radius-sm);
+        border: 1px solid var(--border); background: var(--surface-2); color: var(--text);
+      }
+      .flow-node.is-accent { border-color: var(--accent); color: var(--accent); background: var(--accent-dim); }
+      .flow-arrow { color: var(--text-dim); }
+
+      .track-grid { display: grid; grid-template-columns: repeat(auto-fit,minmax(250px,1fr)); gap: 12px; margin: 14px 0 6px; }
+      .track {
+        padding: 16px; border: 1px solid var(--border);
+        border-radius: var(--radius-md); background: var(--surface);
+      }
+      .track h3 { margin-top: 0; display: flex; align-items: center; gap: 8px; }
+      .track-tag {
+        font-family: var(--font-mono); font-size: 10px; letter-spacing: .06em;
+        text-transform: uppercase; padding: 2px 7px; border-radius: 999px;
+        border: 1px solid var(--accent); color: var(--accent); background: var(--accent-dim);
+      }
+      .track ul { margin-bottom: 0; }
+
+      .method {
+        display: inline-block; min-width: 54px; text-align: center;
+        padding: 2px 7px; border-radius: var(--radius-xs);
+        font-family: var(--font-mono); font-size: 10.5px; font-weight: 700;
+        letter-spacing: .04em; border: 1px solid transparent;
+      }
+      .method.get    { color: var(--blue);   background: var(--blue-bg);   border-color: var(--blue); }
+      .method.post   { color: var(--green);  background: var(--green-bg);  border-color: var(--green); }
+      .method.patch  { color: var(--accent); background: var(--accent-dim);border-color: var(--accent); }
+      .method.delete { color: var(--red);    background: var(--red-bg);    border-color: var(--red); }
+
+      /* ═══════════════════════════════════════════════════════════
+         FOOTER
+      ═══════════════════════════════════════════════════════════ */
+      .footer-note {
+        position: fixed; left: 0; right: 0; bottom: 0;
+        padding: 8px 16px;
+        display: flex; align-items: center; justify-content: center; gap: 8px;
+        background: var(--surface); border-top: 1px solid var(--border);
+        z-index: 50; font-size: 11px; font-family: var(--font-mono); color: var(--text-dim);
+      }
+      .footer-note a { color: var(--accent); text-decoration: none; font-weight: 600; }
+      .footer-note a:hover { opacity: .75; }
+      .footer-sep { color: var(--border); }
+
+      /* ── Documentation picker ──────────────────────────────────
+         Two entry points: what you can do in the browser, and what you
+         can do from a terminal. Choosing one filters the page down to
+         that track; the back link returns here. */
+      .doc-picker {
+        width: 100%;
+        max-width: 1100px;
+        margin: 42px auto 0;
+      }
+      .doc-picker-head { text-align: center; margin-bottom: 26px; }
+      .doc-picker-head h2 { font-size: 22px; font-weight: 700; letter-spacing: -.3px; }
+      .doc-picker-head p {
+        color: var(--text-muted); margin: 8px auto 0; max-width: 62ch; font-size: 13.5px;
+      }
+      .doc-picker-cards {
+        display: grid;
+        grid-template-columns: repeat(3, minmax(0, 1fr));
+        gap: 20px;
+      }
+      .doc-card {
+        display: flex; flex-direction: column; align-items: flex-start;
+        gap: 10px;
+        padding: 24px;
+        text-align: left;
+        border: 1px solid var(--border);
+        border-radius: var(--radius-lg);
+        background: var(--surface);
+        color: var(--text);
+        font: inherit;
+        cursor: pointer;
+        transition: border-color .15s ease, transform .15s ease, box-shadow .15s ease;
+      }
+      .doc-card:hover {
+        border-color: var(--accent);
+        transform: translateY(-2px);
+        box-shadow: 0 14px 34px rgba(0,0,0,.26);
+      }
+      .doc-card-icon {
+        width: 40px; height: 40px; border-radius: var(--radius-md);
+        display: flex; align-items: center; justify-content: center;
+        background: linear-gradient(135deg,#00d4aa 0%,#3b82f6 100%);
+        flex-shrink: 0;
+      }
+      .doc-card-icon svg {
+        width: 20px; height: 20px; fill: none; stroke: #fff;
+        stroke-width: 2; stroke-linecap: round; stroke-linejoin: round;
+      }
+      .doc-card h3 { font-size: 16px; font-weight: 700; letter-spacing: -.2px; }
+      .doc-card > p { color: var(--text-muted); font-size: 13px; line-height: 1.6; }
+      .doc-card ul {
+        list-style: none; margin: 2px 0 0; padding: 0;
+        display: flex; flex-direction: column; gap: 4px;
+      }
+      .doc-card li {
+        color: var(--text-muted); font-size: 12.5px;
+        font-family: var(--font-mono);
+      }
+      .doc-card li::before { content: "› "; color: var(--accent); }
+      .doc-card-cta {
+        margin-top: auto; padding-top: 12px;
+        color: var(--accent); font-size: 13px; font-weight: 600;
+      }
+
+      .doc-back {
+        display: inline-flex; align-items: center; gap: 7px;
+        margin-bottom: 14px; padding: 6px 12px 6px 9px;
+        border: 1px solid var(--border); border-radius: 999px;
+        background: var(--surface); color: var(--text-muted);
+        font: inherit; font-size: 12.5px; cursor: pointer;
+      }
+      .doc-back:hover { color: var(--text); border-color: var(--accent); }
+      .doc-back-arrow { font-size: 14px; line-height: 1; }
+
+      @media (max-width: 760px) {
+        .doc-picker-cards { grid-template-columns: 1fr; }
+      }
+
+      @media (max-width: 900px) {
+        .doc-layout { grid-template-columns: 1fr; gap: 16px; }
+        .toc { position: static; max-height: none; }
+        .brand-text p { display: none; }
+      }
+      @media (max-width: 680px) {
+        /* Let wide reference tables scroll on their own instead of the page. */
+        table { display: block; overflow-x: auto; white-space: normal; }
+        td code { white-space: normal; }
+      }
+      @media (max-width: 560px) {
+        .main-nav a { padding: 6px 10px; }
+      }
+
+      /* ── MCP Horizontal Tabs & AI Auto-Config Prompt ── */
+      .mcp-tab-nav {
+        display: flex;
+        align-items: center;
+        gap: 6px;
+        overflow-x: auto;
+        padding: 4px 2px 10px;
+        margin-top: 18px;
+        margin-bottom: 14px;
+        border-bottom: 1px solid var(--border);
+        -webkit-overflow-scrolling: touch;
+      }
+      .mcp-tab-nav::-webkit-scrollbar { height: 4px; }
+      .mcp-tab-nav::-webkit-scrollbar-thumb { background: var(--border); border-radius: 4px; }
+
+      .mcp-tab-btn {
+        display: inline-flex;
+        align-items: center;
+        gap: 6px;
+        padding: 8px 14px;
+        font-size: 12.5px;
+        font-weight: 500;
+        color: var(--text-muted);
+        background: var(--surface-2);
+        border: 1px solid var(--border);
+        border-radius: var(--radius-sm);
+        cursor: pointer;
+        white-space: nowrap;
+        transition: all 0.15s ease;
+      }
+      .mcp-tab-btn:hover {
+        color: var(--text);
+        background: var(--surface-3);
+        border-color: var(--text-dim);
+      }
+      .mcp-tab-btn.is-active {
+        color: var(--accent);
+        background: var(--accent-dim);
+        border-color: var(--accent);
+        font-weight: 600;
+        box-shadow: 0 0 12px rgba(0,212,170,0.15);
+      }
+      .mcp-tab-icon { font-size: 13px; }
+
+      .mcp-tab-panel { display: block; }
+      .mcp-tab-panel[hidden] { display: none !important; }
+
+      .mcp-config-info {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        margin-bottom: 10px;
+        font-size: 12px;
+        color: var(--text-muted);
+        flex-wrap: wrap;
+      }
+      .mcp-config-badge {
+        display: inline-block;
+        padding: 2px 8px;
+        border-radius: 4px;
+        font-size: 10.5px;
+        font-weight: 700;
+        text-transform: uppercase;
+        letter-spacing: 0.5px;
+        background: var(--blue-bg);
+        color: #93c5fd;
+        border: 1px solid rgba(59,130,246,0.25);
+      }
+      .mcp-config-path { font-size: 11.5px; color: var(--text-dim); }
+      .mcp-cli-hint { font-size: 12px; margin-top: 8px; color: var(--text-muted); }
+
+      /* AI Prompt Card */
+      .mcp-prompt-card {
+        margin-top: 24px;
+        padding: 16px 18px;
+        border-radius: var(--radius-lg);
+        background: linear-gradient(135deg, rgba(0,212,170,0.04) 0%, rgba(59,130,246,0.06) 100%);
+        border: 1px solid rgba(0,212,170,0.22);
+        box-shadow: 0 4px 16px rgba(0,0,0,0.2);
+      }
+      .mcp-prompt-header {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 12px;
+        margin-bottom: 8px;
+        flex-wrap: wrap;
+      }
+      .mcp-prompt-title { display: flex; align-items: center; gap: 10px; }
+      .mcp-prompt-title h3 { font-size: 14px; font-weight: 700; color: var(--text); margin: 0; }
+      .mcp-prompt-badge {
+        display: inline-block;
+        padding: 2px 8px;
+        border-radius: 99px;
+        font-size: 10.5px;
+        font-weight: 700;
+        text-transform: uppercase;
+        background: var(--accent-dim);
+        color: var(--accent);
+        border: 1px solid rgba(0,212,170,0.3);
+      }
+      .btn-copy-prompt {
+        display: inline-flex;
+        align-items: center;
+        gap: 6px;
+        padding: 6px 14px;
+        font-size: 12px;
+        font-weight: 600;
+        border-radius: var(--radius-sm);
+        background: var(--accent);
+        color: #041a15;
+        border: 1px solid var(--accent);
+        cursor: pointer;
+        transition: all 0.15s ease;
+      }
+      .btn-copy-prompt:hover {
+        background: var(--accent-dark);
+        box-shadow: 0 0 12px rgba(0,212,170,0.3);
+      }
+      .btn-copy-prompt.is-copied {
+        background: var(--green);
+        border-color: var(--green);
+        color: #fff;
+      }
+      .mcp-prompt-desc { font-size: 12px; color: var(--text-muted); margin-bottom: 12px; line-height: 1.5; }
+      .mcp-prompt-box {
+        padding: 12px 14px;
+        border-radius: var(--radius-md);
+        background: var(--bg);
+        border: 1px solid var(--border);
+        font-family: var(--font-mono);
+        font-size: 12px;
+        line-height: 1.5;
+        color: var(--text);
+        word-break: break-word;
+      }
+    </style>
+      <link rel="stylesheet" href="/sim-code.css" />
+    <script src="/sim-code.js" defer></script>
+</head>
+  <body>
+    <div class="page">
+
+      <!-- ─── Topbar ──────────────────────────────────────────── -->
+      <div class="topbar">
+        <div class="topbar-left">
+          <div class="brand">
+            <div class="brand-icon">
+              <svg viewBox="0 0 24 24"><path d="M12 2L2 7l10 5 10-5-10-5zM2 17l10 5 10-5M2 12l10 5 10-5"/></svg>
+            </div>
+            <div class="brand-text">
+              <h1>SimProxy</h1>
+              <p>documentation</p>
+            </div>
+          </div>
+          <nav class="main-nav">
+            <a href="/" data-nav="home">Home</a>
+            <a href="/docs.html" data-nav="docs" class="is-active">Documentation</a>
+          </nav>
+        </div>
+      </div>
+
+      <!-- ─── Which documentation? ────────────────────────────── -->
+      <div class="doc-picker" id="docPicker" hidden>
+        <div class="doc-picker-head">
+          <h2>Which documentation do you need?</h2>
+          <p>
+            Both guides cover the same features. Pick where you are working — and mix them
+            freely: create in the browser, break it from a test, watch the logs in either.
+          </p>
+        </div>
+        <div class="doc-picker-cards">
+          <button type="button" class="doc-card" data-open-track="web">
+            <span class="doc-card-icon" aria-hidden="true">
+              <svg viewBox="0 0 24 24"><rect x="2.5" y="4" width="19" height="13" rx="2"/><path d="M8 20h8M12 17v3"/></svg>
+            </span>
+            <h3>Website Documentation</h3>
+            <p>
+              Everything done from the browser. Create a simulation, break and fix it while you
+              watch, and follow live logs — no terminal and no code required.
+            </p>
+            <ul>
+              <li>Create a simulation</li>
+              <li>Break, fix &amp; manage</li>
+              <li>Watch live logs</li>
+            </ul>
+            <span class="doc-card-cta">Open the website guide →</span>
+          </button>
+
+          <button type="button" class="doc-card" data-open-track="terminal">
+            <span class="doc-card-icon" aria-hidden="true">
+              <svg viewBox="0 0 24 24"><rect x="2.5" y="4" width="19" height="16" rx="2"/><path d="M7 9l3 3-3 3M13 15h4"/></svg>
+            </span>
+            <h3>Terminal Documentation</h3>
+            <p>
+              The same lifecycle over plain HTTP. Copy-paste <code>curl</code> commands, the full
+              API reference, and how to wire an outage into a test suite or CI pipeline.
+            </p>
+            <ul>
+              <li>Your Sim-Code &amp; full lifecycle</li>
+              <li>API reference &amp; streaming logs</li>
+              <li>Playwright, Jest/Vitest &amp; CI</li>
+            </ul>
+            <span class="doc-card-cta">Open the terminal guide →</span>
+          </button>
+
+          <button type="button" class="doc-card" data-open-track="mcp">
+            <span class="doc-card-icon" aria-hidden="true" style="background: linear-gradient(135deg,#a855f7 0%,#ec4899 100%);">
+              <svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 3"/><path d="M9 12h.01M15 12h.01"/></svg>
+            </span>
+            <h3>MCP Documentation</h3>
+            <p>
+              Connect Claude Desktop, Cursor IDE, VS Code, or custom AI agents to create, break,
+              fix, and monitor proxy simulations using natural language.
+            </p>
+            <ul>
+              <li>Claude &amp; Cursor configuration</li>
+              <li>13 AI executable tools</li>
+              <li>Live resources &amp; prompts</li>
+            </ul>
+            <span class="doc-card-cta">Open the MCP guide →</span>
+          </button>
+        </div>
+      </div>
+
+      <div class="doc-layout" id="docLayout" hidden>
+        <!-- ─── Table of contents ─────────────────────────────── -->
+        <aside class="toc">
+          <div class="toc-title">On this page</div>
+          <a href="#overview">What is SimProxy</a>
+          <a href="#how-it-works">How it works</a>
+          <a href="#quick-start">Quick start</a>
+          <a href="#concepts">Core concepts</a>
+
+          <a class="toc-group-link" href="#track-web" data-track="web">Web UI</a>
+          <a href="#ui-create" data-track="web">Create a simulation</a>
+          <a href="#ui-manage" data-track="web">Break, fix &amp; manage</a>
+          <a href="#ui-terminals" data-track="web">Watch live logs</a>
+
+          <a class="toc-group-link" href="#track-terminal" data-track="terminal">Terminal</a>
+          <a href="#cli-setup" data-track="terminal">Your user code</a>
+          <a href="#cli-lifecycle" data-track="terminal">Full lifecycle</a>
+          <a href="#api" data-track="terminal">API reference</a>
+          <a href="#logs" data-track="terminal">Streaming logs</a>
+
+          <a class="toc-group-link" href="#track-automation" data-track="terminal">Automation</a>
+          <a href="#playwright" data-track="terminal">Playwright</a>
+          <a href="#test-frameworks" data-track="terminal">Jest / Vitest</a>
+          <a href="#ci" data-track="terminal">CI &amp; shell scripts</a>
+
+          <a class="toc-group-link" href="#track-mcp" data-track="mcp">MCP (AI Assistants)</a>
+          <a href="#mcp-overview" data-track="mcp">What is MCP</a>
+          <a href="#mcp-setup" data-track="mcp">Client Configuration</a>
+          <a href="#mcp-tools" data-track="mcp">Executable Tools</a>
+          <a href="#mcp-resources" data-track="mcp">Resources &amp; Prompts</a>
+          <a href="#mcp-limits" data-track="mcp">Limitations &amp; Rules</a>
+
+          <a class="toc-group-link" href="#track-reference">Reference</a>
+          <a href="#protocols">HTTP &amp; WebSocket</a>
+          <a href="#endpoints">Endpoints &amp; routing</a>
+          <a href="#lifetime">How long it lives</a>
+          <a href="#limits">Limits &amp; behaviour</a>
+          <a href="#troubleshooting">Troubleshooting</a>
+        </aside>
+
+        <!-- ─── Content ───────────────────────────────────────── -->
+        <main class="doc-content">
+
+          <button type="button" class="doc-back" id="docBack">
+            <span class="doc-back-arrow" aria-hidden="true">←</span>
+            <span>All documentation</span>
+          </button>
+
+          <div class="hero">
+            <h2>SimProxy</h2>
+            <p>
+              SimProxy is a proxy simulation manager. Point it at a real upstream — an HTTP/RPC
+              endpoint or a WebSocket server — and it hands you back an endpoint that behaves
+              exactly like the real one until <em>you</em> decide it shouldn't. Break it, throttle it,
+              make it return any error code you like, then put it back up. Your application keeps
+              pointing at the same URL the whole time.
+            </p>
+            <div class="hero-chips">
+              <span class="chip">HTTP / RPC</span>
+              <span class="chip">WebSocket</span>
+              <span class="chip">Break / Fix</span>
+              <span class="chip">Rate limiting</span>
+              <span class="chip">Live logs</span>
+              <span class="chip">Scriptable API</span>
+            </div>
+          </div>
+
+          <!-- ══════════════════════════════════════════════════ -->
+          <section id="overview" data-track="both">
+            <h2>What is SimProxy</h2>
+            <p>
+              Testing what your app does when a dependency fails is hard. You can't take down a public RPC
+              node, and mocks only cover the code paths you remembered to mock. SimProxy sits
+              <strong>between</strong> your app and the real dependency, forwards traffic transparently,
+              and lets you inject failures on demand — from the UI while you watch, or from a terminal
+              inside an automated test.
+            </p>
+            <h3>What you can simulate</h3>
+            <ul>
+              <li><strong>A total outage</strong> — every request answered with your chosen status code and message; WebSockets closed and refused.</li>
+              <li><strong>Rate limiting</strong> — a hard requests-per-second ceiling that starts returning <code>429</code> once exceeded.</li>
+              <li><strong>Custom error contracts</strong> — any status code (<code>500</code>, <code>503</code>, <code>429</code>, <code>418</code>…) with any JSON error message.</li>
+              <li><strong>Recovery</strong> — flip the same endpoint back to healthy and watch your retry and backoff logic recover.</li>
+            </ul>
+            <h3>Typical uses</h3>
+            <ul>
+              <li>Building and verifying error states, retries, fallbacks and reconnect logic.</li>
+              <li>Reproducing "the API was down" bug reports deterministically.</li>
+              <li>End-to-end tests (Playwright, Cypress, Jest, Vitest) that assert what the UI does during an outage.</li>
+              <li>Demoing resilience live: break the dependency mid-demo from a second tab.</li>
+            </ul>
+          </section>
+
+          <!-- ══════════════════════════════════════════════════ -->
+          <section id="how-it-works" data-track="both">
+            <h2>How it works</h2>
+            <p>
+              You create a <strong>simulation</strong>: a port, the real upstream URL, and how it should
+              fail. SimProxy starts a proxy on that port and gives you back an endpoint. Everything your
+              app sends there is forwarded to the real upstream — until you break it.
+            </p>
+            <div class="flow">
+              <span class="flow-node">Your app</span>
+              <span class="flow-arrow">→</span>
+              <span class="flow-node is-accent">SimProxy endpoint</span>
+              <span class="flow-arrow">→</span>
+              <span class="flow-node">real upstream</span>
+            </div>
+            <ul>
+              <li><strong>Break</strong> makes the endpoint fail the way you configured it. <strong>Fix</strong> makes it healthy again. Nothing restarts and the port stays bound, so your app never sees a connection refused unless you want it to.</li>
+              <li><strong>Live logs</strong> from every simulation stream into the UI, and to any terminal or script that wants them.</li>
+              <li><strong>Everything over HTTPS</strong> — HTTP and WebSocket simulations are served from the SimProxy domain under <code>/proxy/&lt;port&gt;</code>, so your endpoints are secure by default with nothing to configure.</li>
+            </ul>
+          </section>
+
+          <!-- ══════════════════════════════════════════════════ -->
+
+          <!-- ══════════════════════════════════════════════════ -->
+          <section id="quick-start" data-track="both">
+            <h2>Quick start</h2>
+            <p>
+              SimProxy is a hosted service — there is nothing to install or run. The web UI and the API
+              both live at:
+            </p>
+            <div class="code-block"><button type="button" class="copy-btn">copy</button><pre>https://proxy.leafapi.com</pre></div>
+            <h4 data-track="web">In 60 seconds</h4>
+            <ol data-track="web">
+              <li>Open <a href="/">proxy.leafapi.com</a>.</li>
+              <li>Paste your real upstream into <strong>Live URL</strong>, pick a <strong>Protocol</strong>, hit <strong>⚡ Suggest Port</strong>, then <strong>Deploy Simulation</strong>.</li>
+              <li>Copy the <strong>Simulated Endpoint</strong> from the table and point your app at it instead of the real URL.</li>
+              <li>Click <strong>Break</strong>. Your app now sees the failure. Click <strong>Fix</strong> to bring it back.</li>
+            </ol>
+            <p data-track="web">
+              That is the whole loop. Everything below covers the same screens in more detail — and if
+              you would rather drive it from a script or a test, the <a href="#cli-setup">terminal
+              guide</a> does exactly the same things with <code>curl</code>.
+            </p>
+            <h4 data-track="terminal">In 60 seconds</h4>
+            <p data-track="terminal">
+              The <code>x-user-code</code> header is what ties a simulation to you — copy yours from the
+              <strong>profile icon</strong> in the top-right corner:
+            </p>
+
+            <!-- AI Auto-Configuration Prompt Box for Quick Start -->
+            <div class="mcp-prompt-card" data-track="terminal" style="margin-top: 14px; margin-bottom: 16px;">
+              <div class="mcp-prompt-header">
+                <div class="mcp-prompt-title">
+                  <span class="mcp-prompt-badge">⚡ Auto-Config Prompt</span>
+                  <h3>Ask AI to Configure Terminal Quick Start Automatically</h3>
+                </div>
+                <button type="button" class="btn-copy-prompt">
+                  <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2"><path d="M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2"/><rect x="8" y="2" width="8" height="4" rx="1" ry="1"/></svg>
+                  <span>Copy Prompt for AI</span>
+                </button>
+              </div>
+              <p class="mcp-prompt-desc">
+                Copy this prompt into your AI coding assistant (Claude, Cursor, Antigravity, Devin, VS Code Copilot, etc.) to execute terminal simulation checks and API calls automatically:
+              </p>
+              <div class="mcp-prompt-box">
+                <code>Read the terminal documentation at https://proxy.leafapi.com/docs.html?doc=terminal to understand SimProxy CLI operations. Please write shell commands using curl to check port availability, create an HTTP proxy for "https://api.example.com" with header "x-user-code: <span data-sim-code>&lt;$SIM_CODE&gt;</span>", simulate an outage with /down, restore with /up, and delete when done.</code>
+              </div>
+            </div>
+
+            <div class="code-block" data-track="terminal"><button type="button" class="copy-btn">copy</button><pre># 1 · is the port you want free? (leave "port" out and SimProxy picks one)
+curl -s "https://proxy.leafapi.com/api/ports/check?port=5001"
+# → {"port":5001,"available":true}
+
+# 2 · create the simulation
+curl -X POST https://proxy.leafapi.com/api/simulations \
+  -H "Content-Type: application/json" \
+  -H "x-user-code: &lt;$SIM_CODE&gt;" \
+  -d '{"url_type":"http","port":5001,"simulate_url":"https://api.example.com"}'
+# → {"port":5001,"state":"up"}
+
+# 3 · break it, then fix it — a simulation is addressed by its port
+curl -X POST https://proxy.leafapi.com/api/simulations/5001/down -H "x-user-code: &lt;$SIM_CODE&gt;"   # break
+curl -X POST https://proxy.leafapi.com/api/simulations/5001/up   -H "x-user-code: &lt;$SIM_CODE&gt;"   # fix
+
+# 4 · delete the simulation when done
+curl -X DELETE https://proxy.leafapi.com/api/simulations/5001 -H "x-user-code: <$SIM_CODE>"</pre></div>
+          </section>
+
+          <!-- ══════════════════════════════════════════════════ -->
+          <section id="concepts" data-track="both">
+            <h2>Core concepts</h2>
+            <table>
+              <thead><tr><th>Term</th><th>Meaning</th></tr></thead>
+              <tbody>
+                <tr><td><strong>Simulation</strong></td><td>One proxy with its own port, upstream URL and failure settings.<span data-track="terminal"> The port is how you address it in every call.</span></td></tr>
+                <tr><td><strong>Live URL</strong><span data-track="terminal"><br/><code>simulate_url</code></span></td><td>The real upstream traffic is forwarded to.</td></tr>
+                <tr><td><strong>Simulated endpoint</strong><span data-track="terminal"><br/><code>proxy_url</code></span></td><td>The URL you give your application in place of the real one.</td></tr>
+                <tr><td><strong>State</strong></td><td><code>up</code> (forwarding normally), <code>down</code> (failing on purpose), <code>starting</code>, or <code>stopped</code>.</td></tr>
+                <tr><td><strong>Break / Fix</strong></td><td>Switching between <code>down</code> and <code>up</code>. Instant, and the port stays bound either way.</td></tr>
+                <tr><td><strong>Rate limit</strong><span data-track="terminal"><br/><code>max_requests_per_second</code></span></td><td>Traffic ceiling per second. Anything above it is rejected while the simulation is otherwise healthy.</td></tr>
+                <tr data-track="web"><td><strong>Sim-Code</strong></td><td>Your workspace, shown in the profile icon in the top-right corner. Everything you create belongs to it, and nobody else can see or control it. In the browser there is nothing to do — the page uses it for you.</td></tr>
+                <tr data-track="terminal"><td><strong>Sim-Code</strong><br/><code>x-user-code</code></td><td>Issued by SimProxy and tied to everything you create. Only the code that created a simulation can see, break, fix, rename or delete it — see <a href="#cli-setup">Your user code</a>.</td></tr>
+              </tbody>
+            </table>
+            <div class="callout note">
+              <span class="callout-icon">ℹ</span>
+              <span><strong>Simulations are not permanent</strong>They live only as long as the service keeps them, so treat them as disposable: create what a run needs and delete it afterwards rather than relying on one sticking around for weeks.</span>
+            </div>
+          </section>
+
+          <!-- ══════════════════════════════════════════════════ -->
+          <div class="track-divider" id="track-web" data-track="web">
+            <span class="track-divider-badge">01</span>
+            <span class="track-divider-title">Web UI</span>
+            <span class="track-divider-hint">point and click, in the browser</span>
+            <span class="track-divider-rule"></span>
+          </div>
+
+          <!-- ══════════════════════════════════════════════════ -->
+          <section id="ui-create" data-track="web">
+            <h2>Create a simulation</h2>
+            <ol class="steps">
+              <li>
+                <h4>Open the Create Simulation panel</h4>
+                <p>It's the first panel on <a href="/">the home page</a>. Every panel can be collapsed with <strong>Minimize</strong> if you want more room.</p>
+              </li>
+              <li>
+                <h4>Paste the Live URL</h4>
+                <p>The real upstream you want to stand in front of:</p>
+                <ul>
+                  <li><code>https://api.example.com</code> — an HTTP API or RPC node</li>
+                  <li><code>wss://node.example.com/ws</code> — a WebSocket server</li>
+                </ul>
+              </li>
+              <li>
+                <h4>Pick the Protocol</h4>
+                <p><code>http</code> or <code>ws</code>. It must match the Live URL — see <a href="#protocols">HTTP &amp; WebSocket</a> for how each one fails.</p>
+              </li>
+              <li>
+                <h4>Choose a Port</h4>
+                <p>Anything from <code>1000</code> to <code>65535</code> that's free. Click <strong>⚡ Suggest Port</strong> and SimProxy fills in the next available one for you.</p>
+              </li>
+              <li>
+                <h4>Set the failure shape</h4>
+                <p><strong>Error Code</strong> (default <code>500</code>) and <strong>Error Message</strong> are what callers receive while the simulation is broken. Enable <strong>Custom JSON response</strong> to paste a multi-field JSON error payload (with realtime syntax validation highlighting errors in red and disabling deployment until fixed). Click <strong>⚡ Suggest Error</strong> to cycle through 10 curated error presets (500-level errors first: 500, 502, 503, 504, 507, followed by 400-level: 400, 401, 403, 404, 429), automatically updating both the Error Code and error payload.</p>
+              </li>
+              <li>
+                <h4>Name it (optional)</h4>
+                <p>Leave <strong>Name</strong> blank and SimProxy names it after the upstream hostname. Create a second simulation for the same host and it becomes <code>example.com-v2</code>, so nothing collides.</p>
+              </li>
+              <li>
+                <h4>Deploy Simulation</h4>
+                <p>The row appears in <strong>Running Simulations</strong> with state <code>up</code>. Click its <strong>Simulated Endpoint</strong> to copy it, and point your app there instead of the real URL.</p>
+              </li>
+            </ol>
+            <div class="callout tip">
+              <span class="callout-icon">✦</span>
+              <span><strong>Keep the switch in config</strong>Put the endpoint in an environment variable (<code>API_URL</code>, <code>RPC_URL</code>…) so you can move between the real upstream and a simulation without touching code.</span>
+            </div>
+          </section>
+
+          <!-- ══════════════════════════════════════════════════ -->
+          <section id="ui-manage" data-track="web">
+            <h2>Break, fix &amp; manage</h2>
+            <p>The <strong>Running Simulations</strong> table is the control panel. Each row shows the id, name, type, port, simulated endpoint, live URL, state and process id, with the actions on the right.</p>
+            <table>
+              <thead><tr><th>Action</th><th>What happens</th></tr></thead>
+              <tbody>
+                <tr><td><strong>Break</strong></td><td>State becomes <code>down</code>. Callers immediately get your error code and message (or a closed socket, for WebSocket simulations). Traffic stops reaching the real upstream.</td></tr>
+                <tr><td><strong>Fix</strong></td><td>State returns to <code>up</code> and forwarding resumes instantly. No restart, no dropped port.</td></tr>
+                <tr><td><strong>Delete</strong></td><td>Stops the proxy and removes the row. The port is released.</td></tr>
+                <tr><td><strong>Click the name</strong></td><td>Rename it inline — handy when several simulations share an upstream.</td></tr>
+                <tr><td><strong>Click the endpoint</strong></td><td>Copies it to your clipboard.</td></tr>
+              </tbody>
+            </table>
+            <h3>Reading the state column</h3>
+            <table>
+              <thead><tr><th>State</th><th>Meaning</th></tr></thead>
+              <tbody>
+                <tr><td><code>starting</code></td><td>The proxy is coming up. It becomes <code>up</code> within a moment.</td></tr>
+                <tr><td><code>up</code></td><td>Healthy — forwarding to the real upstream.</td></tr>
+                <tr><td><code>down</code></td><td>Broken on purpose. This is your doing, not a fault.</td></tr>
+                <tr><td><code>stopped</code></td><td>The proxy exited. Check its terminal for the reason, then delete and recreate it.</td></tr>
+              </tbody>
+            </table>
+            <p>The table scrolls internally after ten rows, so a long list never pushes the terminals off screen.</p>
+          </section>
+
+          <!-- ══════════════════════════════════════════════════ -->
+          <section id="ui-terminals" data-track="web">
+            <h2>Watch live logs</h2>
+            <ol class="steps">
+              <li>
+                <h4>Tick the Terminal checkbox on a row</h4>
+                <p>A terminal card appears in the <strong>Terminal Views</strong> panel and starts streaming that simulation's output live. The checkbox in the table header selects or clears them all at once.</p>
+              </li>
+              <li>
+                <h4>Arrange the grid</h4>
+                <p>Use the <strong>1 / 2 / 3 / 4</strong> buttons in the panel header to set how many terminals sit side by side, and the height controls to make the cards taller or shorter. Both settings are remembered for next time.</p>
+              </li>
+              <li>
+                <h4>Read the traffic</h4>
+                <p>Each line is output straight from the proxy — forwarded requests, rate-limit rejections, connection open and close events, and a note whenever you break or fix it. Watch a terminal while you click Break to see the exact moment behaviour changes.</p>
+              </li>
+            </ol>
+            <div class="callout note">
+              <span class="callout-icon">ℹ</span>
+              <span><strong>Streaming is on demand</strong>Logs only stream while at least one terminal is selected. Clear the checkboxes when you're done and the connection closes.</span>
+            </div>
+          </section>
+
+          <!-- ══════════════════════════════════════════════════ -->
+          <div class="track-divider" id="track-terminal" data-track="terminal">
+            <span class="track-divider-badge">02</span>
+            <span class="track-divider-title">Terminal</span>
+            <span class="track-divider-hint">curl and the API, for scripts and CI</span>
+            <span class="track-divider-rule"></span>
+          </div>
+
+          <!-- ══════════════════════════════════════════════════ -->
+          <section id="cli-setup" data-track="terminal">
+            <h2>Setup &amp; your user code</h2>
+            <div class="callout note sim-code-note">
+              <span class="callout-icon">&#8505;</span>
+              <span><strong>Your Sim-Code</strong>Every <code>&lt;$SIM_CODE&gt;</code> below is
+                yours: <code data-sim-code>loading&#8230;</code>. Copy it from the profile icon, top
+                right. In the browser you never need it &#8212; the UI sends it for you.</span>
+            </div>
+            <p>
+              Everything the UI does is a plain HTTP call against <code>https://proxy.leafapi.com</code>, so
+              the whole lifecycle is scriptable with <code>curl</code>, <code>fetch</code>, or any HTTP
+              client. Responses are JSON. CORS is open, so browser-based test runners work too.
+            </p>
+            <h3>Your user code</h3>
+            <p>
+              Every request carries a <strong>user code</strong> in the <code>x-user-code</code> header.
+              It is what makes a simulation yours: only the code that created one can list, break, fix,
+              rename or delete it. Anyone else — including someone who guesses your port — gets a
+              <code>404</code>, as though it were not there.
+            </p>
+            <p>How to get your Sim-Code:</p>
+            <ul>
+              <li>Click the <strong>profile icon</strong> in the top-right corner of the dashboard to copy your active Sim-Code. Use this value in your MCP client config (<code>x-user-code</code> header or <code>SIM_CODE</code> environment variable), terminal scripts, or CI environment.</li>
+            </ul>
+            <p>
+              Codes are signed by the server, so an invented one is rejected with <code>401</code> — it
+              cannot create anything or reach anything. Keep yours somewhere your scripts can read it
+              (an environment variable or a CI secret) and reuse it; a new code means a new, empty
+              workspace.
+            </p>
+            <div class="callout note">
+              <span class="callout-icon">ℹ</span>
+              <span><strong>Treat it like an API key</strong>Anyone holding your code can manage your simulations, so keep it out of commits, screenshots and shared logs. It identifies a workspace, not a person.</span>
+            </div>
+            <h3>Check it's working</h3>
+            <div class="code-block"><button type="button" class="copy-btn">copy</button><pre>curl -s https://proxy.leafapi.com/api/version
+# → {"version":"1.3.18"}
+
+curl -s https://proxy.leafapi.com/api/simulations \
+  -H "x-user-code: &lt;$SIM_CODE&gt;"
+# → []   (a fresh code starts with nothing)</pre></div>
+          </section>
+
+          <!-- ══════════════════════════════════════════════════ -->
+          <section id="cli-lifecycle" data-track="terminal">
+            <h2>Full lifecycle</h2>
+
+            <h4>1 · Pick a port (optional)</h4>
+            <p>
+              Leave the port out and SimProxy assigns a free one — only ask for a specific port
+              when something is hard-coded to it. When the port is taken the reply names a free
+              one, so one call is enough either way. No Sim-Code needed.
+            </p>
+            <div class="code-block"><button type="button" class="copy-btn">copy</button><pre>curl -s "https://proxy.leafapi.com/api/ports/check?port=5000"
+# → {"port":5000,"available":true}
+# → {"port":5000,"available":false,"suggested_port":5001}   when taken</pre></div>
+
+            <h4>2 · Create a simulation</h4>
+            <div class="code-block"><button type="button" class="copy-btn">copy</button><pre># HTTP / RPC - no port given, SimProxy assigns one
+curl -s -X POST https://proxy.leafapi.com/api/simulations \
+  -H "Content-Type: application/json" \
+  -H "x-user-code: &lt;$SIM_CODE&gt;" \
+  -d '{
+    "name": "flaky-api",
+    "url_type": "http",
+    "simulate_url": "https://api.example.com",
+    "error_status_code": 503,
+    "error_response_message": "Upstream unavailable (simulated)",
+    "max_requests_per_second": 15
+  }'
+
+# WebSocket
+curl -s -X POST https://proxy.leafapi.com/api/simulations \
+  -H "Content-Type: application/json" \
+  -H "x-user-code: &lt;$SIM_CODE&gt;" \
+  -d '{
+    "url_type": "ws",
+    "port": 5002,
+    "simulate_url": "wss://node.example.com/ws",
+    "max_requests_per_second": 5
+  }'</pre></div>
+            <p>
+              The response is the full simulation object, so one call gives you everything you need —
+              the assigned port, the id, and the URL to point your app at:
+            </p>
+            <div class="code-block"><button type="button" class="copy-btn">copy</button><pre>CREATED=$(curl -s -X POST https://proxy.leafapi.com/api/simulations \
+  -H "Content-Type: application/json" \
+  -H "x-user-code: &lt;$SIM_CODE&gt;" \
+  -d '{"url_type":"http","simulate_url":"https://api.example.com"}')
+
+SIM_PORT=$(echo "$CREATED"| jq -r .port)        # 5001, chosen for you
+API_URL=$(echo "$CREATED" | jq -r .proxy_url)   # https://proxy.leafapi.com/proxy/5001
+
+echo "port $SIM_PORT → $API_URL"</pre></div>
+            <p>If you do ask for a specific port and it's taken, the error tells you what to use instead:</p>
+            <div class="code-block"><button type="button" class="copy-btn">copy</button><pre>curl -s -X POST https://proxy.leafapi.com/api/simulations \
+  -H "Content-Type: application/json" \
+  -H "x-user-code: &lt;$SIM_CODE&gt;" \
+  -d '{"url_type":"http","port":5001,"simulate_url":"https://api.example.com"}'
+# → 409 {"error":"port 5001 is already in use",
+#        "suggested_port":5002,"retry_with":{"port":5002}}</pre></div>
+
+            <h4>3 · List what you have</h4>
+            <div class="code-block"><button type="button" class="copy-btn">copy</button><pre>curl -s https://proxy.leafapi.com/api/simulations \
+  -H "x-user-code: &lt;$SIM_CODE&gt;" \
+  | jq -r '.[] | "\(.port)\t\(.name)\t\(.state)\t\(.endpoint)"'</pre></div>
+
+            <h4>4 · Break and fix</h4>
+            <p>Address a simulation by its id or by its port — both work, and both are scoped to your code.</p>
+            <div class="code-block"><button type="button" class="copy-btn">copy</button><pre># break → state: down
+curl -s -X POST https://proxy.leafapi.com/api/simulations/5001/down \
+  -H "x-user-code: &lt;$SIM_CODE&gt;"
+
+# fix → state: up
+curl -s -X POST https://proxy.leafapi.com/api/simulations/5001/up \
+  -H "x-user-code: &lt;$SIM_CODE&gt;"</pre></div>
+
+            <h4>5 · Rename</h4>
+            <div class="code-block"><button type="button" class="copy-btn">copy</button><pre>curl -s -X POST https://proxy.leafapi.com/api/simulations/5001 \
+  -H "Content-Type: application/json" \
+  -H "x-user-code: &lt;$SIM_CODE&gt;" \
+  -d '{"name":"payments-api"}'</pre></div>
+
+            <h4>6 · Read the logs</h4>
+            <div class="code-block"><button type="button" class="copy-btn">copy</button><pre>curl -s https://proxy.leafapi.com/api/simulations/5001/logs \
+  -H "x-user-code: &lt;$SIM_CODE&gt;" \
+  | jq -r '.logs[] | "\(.at) [\(.stream)] \(.line)"'</pre></div>
+
+            <h4>7 · Delete</h4>
+            <p>Deleting stops the proxy and releases the port, by id or by port number:</p>
+            <div class="code-block"><button type="button" class="copy-btn">copy</button><pre>curl -s -X DELETE https://proxy.leafapi.com/api/simulations/5001 \
+  -H "x-user-code: &lt;$SIM_CODE&gt;"
+# → {"deleted":true,"process_termination_requested":true}
+
+# or everything this workspace created
+for port in $(curl -s https://proxy.leafapi.com/api/simulations \
+              -H "x-user-code: &lt;$SIM_CODE&gt;" | jq -r '.[].port'); do
+  curl -s -X DELETE "https://proxy.leafapi.com/api/simulations/$port" \
+    -H "x-user-code: &lt;$SIM_CODE&gt;" > /dev/null
+done</pre></div>
+            <div class="callout tip">
+              <span class="callout-icon">✦</span>
+              <span><strong>Give CI its own code</strong>Call <code>/api/session</code> at the start of a pipeline and use that code for the run. Everything it creates is invisible to everyone else, and "delete everything I created" at the end is then completely safe.</span>
+            </div>
+          </section>
+
+          <!-- ══════════════════════════════════════════════════ -->
+          <section id="api" data-track="terminal">
+            <h2>API reference</h2>
+            <p>
+              Base URL <code>https://proxy.leafapi.com</code>. JSON in, JSON out. Send
+              <code>x-user-code</code> on every call except <code>/api/session</code>,
+              <code>/api/version</code>, <code>/api/ports/check</code> and
+              <code>/api/ports/suggest</code>, which need none.
+            </p>
+            <p>
+              A simulation is addressed by <strong>its port</strong> (<code>5001</code>) — that is
+              what <code>:port</code> means in every route below. Ports are resolved among your own
+              simulations only, so a port you do not own reads as though it were not there.
+            </p>
+            <table>
+              <thead><tr><th>Method</th><th>Path</th><th>Description</th></tr></thead>
+              <tbody>
+                <tr><td><span class="method get">GET</span></td><td><code>/api/session</code></td><td>Issues a user code. Send an existing code to have it echoed back instead of a new one.</td></tr>
+                <tr><td><span class="method get">GET</span></td><td><code>/api/version</code></td><td>Version of the running service. Handy as a health check.</td></tr>
+                <tr><td><span class="method get">GET</span></td><td><code>/api/simulations</code></td><td>Your simulations.</td></tr>
+                <tr><td><span class="method post">POST</span></td><td><code>/api/simulations</code></td><td>Create and start a simulation. Returns <code>201</code> with the object.</td></tr>
+                <tr><td><span class="method post">POST</span></td><td><code>/api/simulations/:port</code></td><td>Rename. Body <code>{ "name": "…" }</code>. <code>PATCH</code> works too, for scripts already written against it.</td></tr>
+                <tr><td><span class="method post">POST</span></td><td><code>/api/simulations/:port/down</code></td><td>Break it.</td></tr>
+                <tr><td><span class="method post">POST</span></td><td><code>/api/simulations/:port/up</code></td><td>Fix it.</td></tr>
+                <tr><td><span class="method delete">DELETE</span></td><td><code>/api/simulations/:port</code></td><td>Stop the proxy, free the port and remove it.</td></tr>
+                <tr><td><span class="method get">GET</span></td><td><code>/api/simulations/:port/logs</code></td><td>Recent log lines for one simulation.</td></tr>
+                <tr><td><span class="method get">GET</span></td><td><code>/api/ports/suggest?from=</code></td><td>First free port at or above <code>from</code>. No Sim-Code needed.</td></tr>
+                <tr><td><span class="method get">GET</span></td><td><code>/api/ports/check?port=</code></td><td>Whether that one port is free. Adds <code>suggested_port</code> when it is not. No Sim-Code needed.</td></tr>
+                <tr><td><span class="method get">GET</span></td><td><code>/api/logs/stream</code></td><td>Live log stream (Server-Sent Events).</td></tr>
+              </tbody>
+            </table>
+
+            <h3>Create body</h3>
+            <table>
+              <thead><tr><th>Field</th><th>Required</th><th>Default</th><th>Notes</th></tr></thead>
+              <tbody>
+                <tr><td><code>url_type</code></td><td>yes</td><td>—</td><td><code>http</code> | <code>ws</code> | <code>db</code></td></tr>
+                <tr><td><code>port</code></td><td>no</td><td>next free port</td><td>Integer <code>1000</code>–<code>65535</code>. Leave it out and SimProxy picks a free one; the response tells you which.</td></tr>
+                <tr><td><code>simulate_url</code></td><td>yes</td><td>—</td><td>The real upstream to forward to.</td></tr>
+                <tr><td><code>name</code></td><td>no</td><td>upstream hostname</td><td>Duplicates get a <code>-v2</code> suffix.</td></tr>
+                <tr><td><code>error_status_code</code></td><td>no</td><td><code>500</code></td><td>Status returned while broken.</td></tr>
+                <tr><td><code>error_response_message</code></td><td>no</td><td><code>Service unavailable (simulated)</code></td><td>Plain string or valid JSON object string returned while broken.</td></tr>
+                <tr><td><code>is_custom_json</code></td><td>no</td><td><code>false</code></td><td>Set to <code>true</code> when <code>error_response_message</code> is formatted as a custom JSON object. Checked on server.</td></tr>
+                <tr><td><code>max_requests_per_second</code></td><td>no</td><td><code>15</code></td><td>Traffic ceiling. Above it, callers get <code>429</code>.</td></tr>
+              </tbody>
+            </table>
+
+            <h3>Simulation object</h3>
+            <div class="code-block"><button type="button" class="copy-btn">copy</button><pre>{
+  "id": "sim-1",
+  "name": "api.example.com",
+  "urlType": "http",
+  "port": 5001,
+  "simulateUrl": "https://api.example.com",
+  "errorStatusCode": 503,
+  "errorResponseMessage": "Upstream unavailable (simulated)",
+  "maxRequestsPerSecond": 15,
+  "state": "up",
+  "createdAt": "2026-09-17T09:12:44.881Z",
+
+  "original_url": "https://api.example.com",           // what it forwards to
+  "proxy_url": "https://proxy.leafapi.com/proxy/5001", // what your app should call
+
+  "last_activity_at": "2026-09-17T11:02:10.004Z",      // last traffic it carried
+  "idle_expires_at": "2026-09-17T14:02:10.004Z",       // 3h after that
+  "expires_at": "2026-09-18T09:12:44.881Z"             // 24h after creation
+}</pre></div>
+
+            <h3>Error responses</h3>
+            <table>
+              <thead><tr><th>Status</th><th>When</th></tr></thead>
+              <tbody>
+                <tr><td><code>400</code></td><td>Missing or invalid field — unknown <code>url_type</code>, port out of range, or no <code>simulate_url</code>.</td></tr>
+                <tr><td><code>401</code></td><td>No user code, or one that SimProxy did not issue. Get one from <code>/api/session</code>.</td></tr>
+                <tr><td><code>404</code></td><td>No simulation of yours matches that id or port. Simulations belonging to other codes are invisible, so this is also what a stranger's simulation looks like.</td></tr>
+                <tr><td><code>409</code></td><td>The port you asked for is taken — the response carries <code>suggested_port</code> and <code>retry_with</code> so a script can resubmit straight away. Also returned if you break or fix a simulation that has stopped.</td></tr>
+                <tr><td><code>503</code></td><td>No free port was available at all.</td></tr>
+              </tbody>
+            </table>
+            <div class="callout tip">
+              <span class="callout-icon">✦</span>
+              <span><strong>Retry a busy port automatically</strong><code>409</code> carries <code>suggested_port</code>, so a script can resubmit with that port instead of failing the test run.</span>
+            </div>
+          </section>
+
+          <!-- ══════════════════════════════════════════════════ -->
+          <section id="logs" data-track="terminal">
+            <h2>Streaming logs</h2>
+            <p>
+              <code>GET /api/logs/stream</code> is a Server-Sent Events endpoint that replays a short
+              backlog and then pushes new lines as they happen — useful for attaching proxy traffic to a
+              CI artefact, or asserting that a request actually reached the proxy.
+            </p>
+            <table>
+              <thead><tr><th>Query</th><th>Meaning</th></tr></thead>
+              <tbody>
+                <tr><td><code>ids</code></td><td>Comma-separated ports. Omit for everything in your workspace.</td></tr>
+                <tr><td><code>backlog</code></td><td>Lines replayed per simulation on connect. Default <code>50</code>, max <code>300</code>, <code>0</code> for live-only.</td></tr>
+              </tbody>
+            </table>
+            <h4>Follow from a terminal</h4>
+            <div class="code-block"><button type="button" class="copy-btn">copy</button><pre>curl -N -H "x-user-code: &lt;$SIM_CODE&gt;" \
+  "https://proxy.leafapi.com/api/logs/stream?ids=5001&backlog=0" \
+  | grep --line-buffered '^data: ' | sed -u 's/^data: //' | jq -r 'select(.line) | .line'</pre></div>
+            <h4>Capture to a file during a test run</h4>
+            <div class="code-block"><button type="button" class="copy-btn">copy</button><pre>curl -N -H "x-user-code: &lt;$SIM_CODE&gt;" \
+  "https://proxy.leafapi.com/api/logs/stream?backlog=0" > proxy.log &
+LOG_PID=$!
+npm test
+kill $LOG_PID</pre></div>
+            <p>Each entry looks like this — <code>stream</code> is <code>stdout</code>, <code>stderr</code> or <code>system</code>:</p>
+            <div class="code-block"><button type="button" class="copy-btn">copy</button><pre>{ "id": "sim-1", "name": "api.example.com",
+  "stream": "stdout", "line": "Forwarding request to upstream",
+  "at": "2026-09-17T09:13:02.104Z" }</pre></div>
+            <p>A <code>heartbeat</code> event arrives every few seconds to keep the connection alive; skip entries without a <code>line</code> field.</p>
+          </section>
+
+          <!-- ══════════════════════════════════════════════════ -->
+          <div class="track-divider" id="track-automation" data-track="terminal">
+            <span class="track-divider-badge">03</span>
+            <span class="track-divider-title">Automation</span>
+            <span class="track-divider-hint">Playwright, Vitest and test pipelines</span>
+            <span class="track-divider-rule"></span>
+          </div>
+
+          <!-- ══════════════════════════════════════════════════ -->
+          <section id="playwright" data-track="terminal">
+            <h2>Playwright</h2>
+            <p>
+              Create the simulation once per suite, point the app at it, and break it inside the test that
+              needs an outage. No SDK required — <code>fetch</code> is enough.
+            </p>
+
+            <!-- AI Auto-Configuration Prompt Box for Playwright -->
+            <div class="mcp-prompt-card" data-track="terminal" style="margin-top: 14px; margin-bottom: 20px;">
+              <div class="mcp-prompt-header">
+                <div class="mcp-prompt-title">
+                  <span class="mcp-prompt-badge">⚡ Auto-Config Prompt</span>
+                  <h3>Ask AI to Configure Playwright Automatically</h3>
+                </div>
+                <button type="button" class="btn-copy-prompt">
+                  <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2"><path d="M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2"/><rect x="8" y="2" width="8" height="4" rx="1" ry="1"/></svg>
+                  <span>Copy Prompt for AI</span>
+                </button>
+              </div>
+              <p class="mcp-prompt-desc">
+                Copy this prompt into your AI coding assistant to automatically generate a Playwright test suite with SimProxy outage testing helper:
+              </p>
+              <div class="mcp-prompt-box">
+                <code>Read the Playwright guide at https://proxy.leafapi.com/docs.html?doc=terminal#playwright to understand SimProxy test automation. Please create a Playwright helper utility (tests/simproxy.ts) using header "x-user-code: <span data-sim-code>&lt;$SIM_CODE&gt;</span>" and an E2E test file that provisions a proxy simulation in beforeAll, tests happy paths, breaks/fixes the proxy to test UI resilience, and cleans up in afterAll.</code>
+              </div>
+            </div>
+
+            <h4>A small helper</h4>
+            <div class="code-block"><button type="button" class="copy-btn">copy</button><pre>// tests/simproxy.ts
+const BASE = process.env.SIMPROXY_URL ?? "https://proxy.leafapi.com";
+let CODE = process.env.SIMPROXY_CODE ?? "";   // set one in CI, or fetch below
+
+async function call(path: string, init: RequestInit = {}) {
+  const res = await fetch(`${BASE}${path}`, {
+    ...init,
+    headers: { "content-type": "application/json", "x-user-code": CODE, ...init.headers },
+  });
+  if (!res.ok) throw new Error(`SimProxy ${path} → ${res.status} ${await res.text()}`);
+  return res.json();
+}
+
+export const simproxy = {
+  /* Call once before the first create if SIMPROXY_CODE is not set. */
+  signIn: async () =&gt; {
+    if (!CODE) CODE = (await (await fetch(`${BASE}/api/session`)).json()).user_code;
+    return CODE;
+  },
+  create: (body: Record&lt;string, unknown&gt;) =&gt;
+    call("/api/simulations", { method: "POST", body: JSON.stringify(body) }),
+  break: (port: number) =&gt; call(`/api/simulations/${port}/down`, { method: "POST" }),
+  fix:   (port: number) =&gt; call(`/api/simulations/${port}/up`,   { method: "POST" }),
+  remove:(port: number) =&gt; call(`/api/simulations/${port}`,      { method: "DELETE" }),
+  /* The port itself when it is free, otherwise the free one it suggests. */
+  freePort: async (port = 5000) =&gt; {
+    const res = await call(`/api/ports/check?port=${port}`);
+    return (res.available ? port : res.suggested_port) as number;
+  },
+};</pre></div>
+
+            <h4>The test</h4>
+            <div class="code-block"><button type="button" class="copy-btn">copy</button><pre>import { test, expect } from "@playwright/test";
+import { simproxy } from "./simproxy";
+
+let sim: { port: number; proxy_url: string };
+
+test.beforeAll(async () =&gt; {
+  await simproxy.signIn();
+  sim = await simproxy.create({
+    name: "checkout-api",
+    url_type: "http",
+    simulate_url: process.env.REAL_API_URL,      // no port: one is assigned
+    error_status_code: 503,
+    error_response_message: "Payments API is down (simulated)",
+  });
+  // start / configure your app with API_URL = sim.proxy_url
+});
+
+test.afterAll(async () =&gt; {
+  await simproxy.remove(sim.port);
+});
+
+test("checkout works while the API is healthy", async ({ page }) =&gt; {
+  await page.goto("/checkout");
+  await expect(page.getByRole("button", { name: "Pay" })).toBeEnabled();
+});
+
+test("shows a retry banner when the API goes down", async ({ page }) =&gt; {
+  await page.goto("/checkout");
+  await simproxy.break(sim.port);
+
+  await page.getByRole("button", { name: "Pay" }).click();
+  await expect(page.getByText("We couldn't reach payments")).toBeVisible();
+
+  await simproxy.fix(sim.port);
+  await page.getByRole("button", { name: "Try again" }).click();
+  await expect(page.getByText("Payment confirmed")).toBeVisible();
+});</pre></div>
+
+            <h4>Testing throttling</h4>
+            <p>Create the simulation with a low ceiling and the proxy starts returning <code>429</code> under load — enough to assert your backoff or your "slow down" message.</p>
+            <div class="code-block"><button type="button" class="copy-btn">copy</button><pre>sim = await simproxy.create({
+  url_type: "http", simulate_url: process.env.REAL_API_URL,
+  max_requests_per_second: 2,
+});</pre></div>
+
+            <h4>Testing a dropped WebSocket</h4>
+            <p>Breaking a <code>ws</code> simulation closes every live socket and refuses new ones — exactly what an upstream going away looks like. Fix it and your reconnect logic should recover on its own.</p>
+            <div class="code-block"><button type="button" class="copy-btn">copy</button><pre>test("reconnects after the socket drops", async ({ page }) =&gt; {
+  await page.goto("/live");
+  await expect(page.getByTestId("status")).toHaveText("connected");
+
+  await simproxy.break(sim.port);
+  await expect(page.getByTestId("status")).toHaveText("reconnecting");
+
+  await simproxy.fix(sim.port);
+  await expect(page.getByTestId("status")).toHaveText("connected", { timeout: 15_000 });
+});</pre></div>
+          </section>
+
+          <!-- ══════════════════════════════════════════════════ -->
+          <section id="test-frameworks" data-track="terminal">
+            <h2>Jest / Vitest</h2>
+            <p>The same pattern works in any runner — it's just HTTP calls in setup and teardown.</p>
+
+            <!-- AI Auto-Configuration Prompt Box for Jest / Vitest -->
+            <div class="mcp-prompt-card" data-track="terminal" style="margin-top: 14px; margin-bottom: 20px;">
+              <div class="mcp-prompt-header">
+                <div class="mcp-prompt-title">
+                  <span class="mcp-prompt-badge">⚡ Auto-Config Prompt</span>
+                  <h3>Ask AI to Configure Jest / Vitest Automatically</h3>
+                </div>
+                <button type="button" class="btn-copy-prompt">
+                  <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2"><path d="M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2"/><rect x="8" y="2" width="8" height="4" rx="1" ry="1"/></svg>
+                  <span>Copy Prompt for AI</span>
+                </button>
+              </div>
+              <p class="mcp-prompt-desc">
+                Copy this prompt into your AI coding assistant to configure Jest or Vitest integration for API outage and retry testing:
+              </p>
+              <div class="mcp-prompt-box">
+                <code>Read the Jest & Vitest testing guide at https://proxy.leafapi.com/docs.html?doc=terminal#test-frameworks. Please write a Vitest/Jest test file that provisions a SimProxy simulation in beforeAll using header "x-user-code: <span data-sim-code>&lt;$SIM_CODE&gt;</span>", asserts client retry & fallback behavior during simulated outages, and removes the proxy in afterAll.</code>
+              </div>
+            </div>
+            <div class="code-block"><button type="button" class="copy-btn">copy</button><pre>import { beforeAll, afterAll, expect, test } from "vitest";
+import { simproxy } from "./simproxy";
+
+let sim;
+
+beforeAll(async () =&gt; {
+  await simproxy.signIn();
+  sim = await simproxy.create({
+    url_type: "http",
+    simulate_url: "https://api.example.com",
+    error_status_code: 503,
+  });
+});
+
+afterAll(() =&gt; simproxy.remove(sim.port));
+
+test("client retries and then surfaces the outage", async () =&gt; {
+  const client = makeClient({ baseUrl: sim.proxy_url, retries: 2 });
+
+  await simproxy.break(sim.port);
+  await expect(client.getOrders()).rejects.toThrow(/unavailable/i);
+
+  await simproxy.fix(sim.port);
+  await expect(client.getOrders()).resolves.toHaveLength(3);
+});</pre></div>
+            <div class="callout note">
+              <span class="callout-icon">ℹ</span>
+              <span><strong>Run tests serially against one simulation</strong>Break and fix affect that whole endpoint. If tests run in parallel, create one simulation per worker — since the port is assigned for you, that is just one create call each.</span>
+            </div>
+          </section>
+
+          <!-- ══════════════════════════════════════════════════ -->
+          <section id="ci" data-track="terminal">
+            <h2>CI &amp; shell scripts</h2>
+
+            <!-- AI Auto-Configuration Prompt Box for CI & Shell Scripts -->
+            <div class="mcp-prompt-card" data-track="terminal" style="margin-top: 14px; margin-bottom: 20px;">
+              <div class="mcp-prompt-header">
+                <div class="mcp-prompt-title">
+                  <span class="mcp-prompt-badge">⚡ Auto-Config Prompt</span>
+                  <h3>Ask AI to Configure CI & Shell Scripts Automatically</h3>
+                </div>
+                <button type="button" class="btn-copy-prompt">
+                  <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2"><path d="M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2"/><rect x="8" y="2" width="8" height="4" rx="1" ry="1"/></svg>
+                  <span>Copy Prompt for AI</span>
+                </button>
+              </div>
+              <p class="mcp-prompt-desc">
+                Copy this prompt into your AI coding assistant to generate CI pipeline shell scripts with isolated session codes and chaos loops:
+              </p>
+              <div class="mcp-prompt-box">
+                <code>Read the CI & shell scripts guide at https://proxy.leafapi.com/docs.html?doc=terminal#ci. Please write a CI pipeline bash script that requests an isolated Sim-Code from /api/session, creates a proxy simulation, sets EXIT trap cleanup, triggers dependency outages during E2E runs, and logs results.</code>
+              </div>
+            </div>
+
+            <h4>Wrap a test run in an outage</h4>
+            <div class="code-block"><button type="button" class="copy-btn">copy</button><pre>#!/usr/bin/env bash
+set -euo pipefail
+
+# A fresh Sim-Code for this run: nothing it creates is visible to anyone else.
+# (A pipeline issues its own rather than reusing the one from your browser.)
+SIM_CODE=$(curl -s https://proxy.leafapi.com/api/session | jq -r .user_code)
+
+CREATED=$(curl -s -X POST https://proxy.leafapi.com/api/simulations \
+  -H "Content-Type: application/json" \
+  -H "x-user-code: $SIM_CODE" \
+  -d "{\"url_type\":\"http\",\"simulate_url\":\"$REAL_API_URL\",\"error_status_code\":503}")
+
+SIM_PORT=$(echo "$CREATED" | jq -r .port)
+export API_URL=$(echo "$CREATED" | jq -r .proxy_url)
+
+trap 'curl -s -X DELETE "https://proxy.leafapi.com/api/simulations/$SIM_PORT" \
+  -H "x-user-code: $SIM_CODE" > /dev/null' EXIT
+
+npm run test:e2e:happy-path
+
+curl -s -X POST "https://proxy.leafapi.com/api/simulations/$SIM_PORT/down" \
+  -H "x-user-code: $SIM_CODE" > /dev/null
+npm run test:e2e:outage</pre></div>
+
+            <h4>Break the dependency part-way through a run</h4>
+            <div class="code-block"><button type="button" class="copy-btn">copy</button><pre>( sleep 5; curl -s -X POST "https://proxy.leafapi.com/api/simulations/$SIM_PORT/down" \
+    -H "x-user-code: $SIM_CODE" > /dev/null ) &amp;
+npm run test:integration</pre></div>
+
+            <h4>Chaos loop — up 30s, down 10s, repeat</h4>
+            <div class="code-block"><button type="button" class="copy-btn">copy</button><pre>while true; do
+  curl -s -X POST "https://proxy.leafapi.com/api/simulations/$SIM_PORT/up" \
+    -H "x-user-code: $SIM_CODE" > /dev/null; echo "UP";   sleep 30
+  curl -s -X POST "https://proxy.leafapi.com/api/simulations/$SIM_PORT/down" \
+    -H "x-user-code: $SIM_CODE" > /dev/null; echo "DOWN"; sleep 10
+done</pre></div>
+
+            <h4>Assert your retry budget</h4>
+            <div class="code-block"><button type="button" class="copy-btn">copy</button><pre>curl -s -X POST "https://proxy.leafapi.com/api/simulations/$SIM_PORT/down" \
+  -H "x-user-code: $SIM_CODE" > /dev/null
+for i in $(seq 1 10); do
+  curl -s -o /dev/null -w "%{http_code} " "$API_URL/health"
+done
+echo   # → 503 503 503 503 ...</pre></div>
+
+            <h4>Wait until a simulation is ready</h4>
+            <div class="code-block"><button type="button" class="copy-btn">copy</button><pre>until [ "$(curl -s https://proxy.leafapi.com/api/simulations \
+            -H "x-user-code: $SIM_CODE" \
+            | jq -r --arg port "$SIM_PORT" \
+                  '.[] | select(.port==($port|tonumber)) | .state')" = "up" ]; do
+  sleep 0.2
+done</pre></div>
+          </section>
+
+          <!-- ══════════════════════════════════════════════════ -->
+          <div class="track-divider" id="track-mcp" data-track="mcp">
+            <span class="track-divider-badge">03</span>
+            <span class="track-divider-title">MCP (Model Context Protocol)</span>
+            <span class="track-divider-hint">Claude Desktop, Cursor IDE &amp; VS Code</span>
+            <span class="track-divider-rule"></span>
+          </div>
+
+          <!-- ══════════════════════════════════════════════════ -->
+          <section id="mcp-overview" data-track="mcp">
+            <h2>What is MCP</h2>
+            <p>
+              The <strong>Model Context Protocol (MCP)</strong> is an open standard by Anthropic that allows AI assistants (such as Claude Desktop, Cursor IDE, or VS Code Copilot) to connect directly to SimProxy. Instead of copying curl commands or manually clicking in the browser UI, your AI assistant can create, break, fix, rename, duplicate, and monitor simulations using simple natural language.
+            </p>
+            <h3>What your AI assistant can do</h3>
+            <ul>
+              <li><em>"Create an HTTP proxy for https://api.example.com with rate limit 10 req/s"</em></li>
+              <li><em>"Show me all my running simulations"</em></li>
+              <li><em>"Simulate an outage on my proxy on port 5001"</em></li>
+              <li><em>"Fetch recent logs from my RPC proxy"</em></li>
+              <li><em>"Clean up all stopped simulations"</em></li>
+            </ul>
+          </section>
+
+          <!-- ══════════════════════════════════════════════════ -->
+          <section id="mcp-setup" data-track="mcp">
+            <h2>Client Configuration</h2>
+            <p>
+              SimProxy supports both <strong>Streamable HTTP</strong> (remote/hosted deployments) and <strong>stdio</strong> (local CLI mode). Choose your AI client tab below to view its specific configuration snippet or copy the AI Prompt to let your AI assistant configure MCP automatically.
+            </p>
+
+            <!-- AI Auto-Configuration Prompt Box -->
+            <div class="mcp-prompt-card" style="margin-top: 14px; margin-bottom: 20px;">
+              <div class="mcp-prompt-header">
+                <div class="mcp-prompt-title">
+                  <span class="mcp-prompt-badge">⚡ Auto-Config Prompt</span>
+                  <h3>Ask AI to Configure MCP Automatically</h3>
+                </div>
+                <button type="button" class="btn-copy-prompt" id="copyAiPromptBtn">
+                  <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2"><path d="M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2"/><rect x="8" y="2" width="8" height="4" rx="1" ry="1"/></svg>
+                  <span>Copy Prompt for AI</span>
+                </button>
+              </div>
+              <p class="mcp-prompt-desc">
+                Copy this prompt into your AI coding assistant (Claude, Cursor, Antigravity, Devin, VS Code Copilot, PhpStorm AI, etc.). The AI will fetch the documentation URL to understand the MCP tools and write your configuration automatically:
+              </p>
+              <div class="mcp-prompt-box">
+                <code id="aiPromptText">Read the MCP documentation at https://proxy.leafapi.com/docs.html?doc=mcp to understand the SimProxy Model Context Protocol integration and available executable tools. Please configure the MCP server "proxy-url" for this workspace using endpoint "https://proxy.leafapi.com/mcp", transport "streamable-http", and header "x-user-code: <span data-sim-code>&lt;$SIM_CODE&gt;</span>".</code>
+              </div>
+            </div>
+
+            <!-- Horizontal Client Tabs -->
+            <div class="mcp-tab-nav" role="tablist" aria-label="MCP Client Configurations">
+              <button type="button" class="mcp-tab-btn is-active" data-doc-tab="claude" role="tab" aria-selected="true">
+                <span class="mcp-tab-icon">✦</span> Claude Desktop
+              </button>
+              <button type="button" class="mcp-tab-btn" data-doc-tab="cursor" role="tab" aria-selected="false">
+                <span class="mcp-tab-icon">⚡</span> Cursor IDE
+              </button>
+              <button type="button" class="mcp-tab-btn" data-doc-tab="vscode" role="tab" aria-selected="false">
+                <span class="mcp-tab-icon">💻</span> VS Code
+              </button>
+              <button type="button" class="mcp-tab-btn" data-doc-tab="antigravity" role="tab" aria-selected="false">
+                <span class="mcp-tab-icon">🚀</span> Antigravity / Gemini
+              </button>
+              <button type="button" class="mcp-tab-btn" data-doc-tab="devin" role="tab" aria-selected="false">
+                <span class="mcp-tab-icon">🤖</span> Devin AI
+              </button>
+              <button type="button" class="mcp-tab-btn" data-doc-tab="phpstorm" role="tab" aria-selected="false">
+                <span class="mcp-tab-icon">🐘</span> PhpStorm / JetBrains
+              </button>
+              <button type="button" class="mcp-tab-btn" data-doc-tab="lmstudio" role="tab" aria-selected="false">
+                <span class="mcp-tab-icon">🧪</span> Local Studio / LM Studio
+              </button>
+              <button type="button" class="mcp-tab-btn" data-doc-tab="generic" role="tab" aria-selected="false">
+                <span class="mcp-tab-icon">⚙️</span> Generic / stdio CLI
+              </button>
+            </div>
+
+            <!-- Tab Content Panels -->
+            <div class="mcp-tab-content">
+              <!-- Claude Desktop -->
+              <div class="mcp-tab-panel is-active" id="mcp-doc-claude" role="tabpanel">
+                <div class="mcp-config-info">
+                  <span class="mcp-config-badge">Config File</span>
+                  <code>claude_desktop_config.json</code>
+                  <span class="mcp-config-path">(Mac: <code>~/Library/Application Support/Claude/claude_desktop_config.json</code> | Windows: <code>%APPDATA%\Claude\claude_desktop_config.json</code>)</span>
+                </div>
+                <div class="code-block"><button type="button" class="copy-btn">copy</button><pre>{
+  "mcpServers": {
+    "proxy-url": {
+      "url": "https://proxy.leafapi.com/mcp",
+      "transport": "streamable-http",
+      "headers": {
+        "x-user-code": "<span data-sim-code>&lt;$SIM_CODE&gt;</span>"
+      }
+    }
+  }
+}</pre></div>
+                <p class="mcp-cli-hint">Or run CLI command in terminal: <code>claude mcp add proxy-url https://proxy.leafapi.com/mcp -H "x-user-code: <span data-sim-code>&lt;$SIM_CODE&gt;</span>"</code></p>
+              </div>
+
+              <!-- Cursor IDE -->
+              <div class="mcp-tab-panel" id="mcp-doc-cursor" role="tabpanel" hidden>
+                <div class="mcp-config-info">
+                  <span class="mcp-config-badge">Project Config</span>
+                  <code>.cursor/mcp.json</code> or Cursor Settings &rarr; Features &rarr; MCP
+                </div>
+                <div class="code-block"><button type="button" class="copy-btn">copy</button><pre>{
+  "mcpServers": {
+    "proxy-url": {
+      "url": "https://proxy.leafapi.com/mcp",
+      "transport": "streamable-http",
+      "headers": {
+        "x-user-code": "<span data-sim-code>&lt;$SIM_CODE&gt;</span>"
+      }
+    }
+  }
+}</pre></div>
+              </div>
+
+              <!-- VS Code -->
+              <div class="mcp-tab-panel" id="mcp-doc-vscode" role="tabpanel" hidden>
+                <div class="mcp-config-info">
+                  <span class="mcp-config-badge">VS Code Config</span>
+                  <code>.vscode/mcp.json</code> (or Roo Code / Cline / Continue / Copilot <code>settings.json</code>)
+                </div>
+                <div class="code-block"><button type="button" class="copy-btn">copy</button><pre>{
+  "mcpServers": {
+    "proxy-url": {
+      "url": "https://proxy.leafapi.com/mcp",
+      "transport": "streamable-http",
+      "headers": {
+        "x-user-code": "<span data-sim-code>&lt;$SIM_CODE&gt;</span>"
+      }
+    }
+  }
+}</pre></div>
+              </div>
+
+              <!-- Antigravity / Gemini -->
+              <div class="mcp-tab-panel" id="mcp-doc-antigravity" role="tabpanel" hidden>
+                <div class="mcp-config-info">
+                  <span class="mcp-config-badge">Workspace Config</span>
+                  <code>.gemini/mcp.json</code> or <code>.antigravity/mcp.json</code>
+                </div>
+                <div class="code-block"><button type="button" class="copy-btn">copy</button><pre>{
+  "mcpServers": {
+    "proxy-url": {
+      "url": "https://proxy.leafapi.com/mcp",
+      "transport": "streamable-http",
+      "headers": {
+        "x-user-code": "<span data-sim-code>&lt;$SIM_CODE&gt;</span>"
+      }
+    }
+  }
+}</pre></div>
+              </div>
+
+              <!-- Devin AI -->
+              <div class="mcp-tab-panel" id="mcp-doc-devin" role="tabpanel" hidden>
+                <div class="mcp-config-info">
+                  <span class="mcp-config-badge">Devin Config</span>
+                  <code>.devin/mcp.json</code> or Devin Workspace Settings &rarr; MCP
+                </div>
+                <div class="code-block"><button type="button" class="copy-btn">copy</button><pre>{
+  "mcpServers": {
+    "proxy-url": {
+      "url": "https://proxy.leafapi.com/mcp",
+      "transport": "streamable-http",
+      "headers": {
+        "x-user-code": "<span data-sim-code>&lt;$SIM_CODE&gt;</span>"
+      }
+    }
+  }
+}</pre></div>
+              </div>
+
+              <!-- PhpStorm / JetBrains -->
+              <div class="mcp-tab-panel" id="mcp-doc-phpstorm" role="tabpanel" hidden>
+                <div class="mcp-config-info">
+                  <span class="mcp-config-badge">JetBrains / PhpStorm</span>
+                  <code>.idea/mcp.json</code> or Settings &rarr; Tools &rarr; Model Context Protocol (MCP)
+                </div>
+                <div class="code-block"><button type="button" class="copy-btn">copy</button><pre>{
+  "mcpServers": {
+    "proxy-url": {
+      "url": "https://proxy.leafapi.com/mcp",
+      "transport": "streamable-http",
+      "headers": {
+        "x-user-code": "<span data-sim-code>&lt;$SIM_CODE&gt;</span>"
+      }
+    }
+  }
+}</pre></div>
+              </div>
+
+              <!-- Local Studio / LM Studio -->
+              <div class="mcp-tab-panel" id="mcp-doc-lmstudio" role="tabpanel" hidden>
+                <div class="mcp-config-info">
+                  <span class="mcp-config-badge">Local AI Studio</span>
+                  LM Studio Developer Settings &rarr; MCP Servers or local client JSON
+                </div>
+                <div class="code-block"><button type="button" class="copy-btn">copy</button><pre>{
+  "mcpServers": {
+    "proxy-url": {
+      "url": "https://proxy.leafapi.com/mcp",
+      "transport": "streamable-http",
+      "headers": {
+        "x-user-code": "<span data-sim-code>&lt;$SIM_CODE&gt;</span>"
+      }
+    }
+  }
+}</pre></div>
+              </div>
+
+              <!-- Generic stdio CLI -->
+              <div class="mcp-tab-panel" id="mcp-doc-generic" role="tabpanel" hidden>
+                <div class="mcp-config-info">
+                  <span class="mcp-config-badge">Stdio Command Mode</span>
+                  Local CLI execution using node &amp; <code>mcp_server.js</code>
+                </div>
+                <div class="code-block"><button type="button" class="copy-btn">copy</button><pre>{
+  "mcpServers": {
+    "proxy-url": {
+      "command": "node",
+      "args": ["/path/to/proxy-url/mcp_server.js", "--stdio"],
+      "env": {
+        "MANAGER_PORT": "9090",
+        "SIM_CODE": "<span data-sim-code>&lt;$SIM_CODE&gt;</span>"
+      }
+    }
+  }
+}</pre></div>
+              </div>
+            </div>
+          </section>
+
+          <!-- ══════════════════════════════════════════════════ -->
+          <section id="mcp-tools" data-track="mcp">
+            <h2>Executable Tools</h2>
+            <p>
+              SimProxy exposes <strong>13 AI tools</strong> (10 core + 3 compound workflow tools) that AI clients can invoke automatically:
+            </p>
+            <table>
+              <thead>
+                <tr><th>Tool Name</th><th>Description</th></tr>
+              </thead>
+              <tbody>
+                <tr><td><code>create_simulation</code></td><td>Create an HTTP, WebSocket, or DB proxy simulation targeting an upstream URL.</td></tr>
+                <tr><td><code>list_simulations</code></td><td>List all simulations owned by your Sim-Code with their active status and endpoints.</td></tr>
+                <tr><td><code>get_simulation</code></td><td>Get detailed metadata for a specific simulation by port number.</td></tr>
+                <tr><td><code>simulation_down</code></td><td>Simulate an outage by port — reject incoming traffic with configured error status &amp; message.</td></tr>
+                <tr><td><code>simulation_up</code></td><td>Restore a simulation back to UP state by port and resume normal proxy forwarding.</td></tr>
+                <tr><td><code>delete_simulation</code></td><td>Permanently delete a simulation by port and free its allocated port.</td></tr>
+                <tr><td><code>rename_simulation</code></td><td>Rename an existing simulation by port to a friendly display name.</td></tr>
+                <tr><td><code>get_simulation_logs</code></td><td>Retrieve recent log lines (stdout, stderr, system events) from a proxy by port.</td></tr>
+                <tr><td><code>check_port</code></td><td>Check if a specific port number is free or get suggestion for next free port.</td></tr>
+                <tr><td><code>suggest_port</code></td><td>Find the next available free port starting from a minimum port number.</td></tr>
+                <tr><td><code>delete_all_stopped</code></td><td>Clean up and remove all stopped proxy simulations owned by your Sim-Code.</td></tr>
+                <tr><td><code>clone_simulation</code></td><td>Duplicate a simulation by port with optional parameter overrides (rate limits, error codes).</td></tr>
+                <tr><td><code>bulk_status_change</code></td><td>Bring multiple simulations UP or DOWN simultaneously by port for chaos engineering tests.</td></tr>
+              </tbody>
+            </table>
+          </section>
+
+          <!-- ══════════════════════════════════════════════════ -->
+          <section id="mcp-resources" data-track="mcp">
+            <h2>Resources &amp; Prompts</h2>
+            <h3>Context Resources (Read-Only)</h3>
+            <p>AI assistants can attach context from read-only resource URIs:</p>
+            <ul>
+              <li><code>proxy://simulations</code> — Live list of all active simulations.</li>
+              <li><code>proxy://simulations/{id}</code> — Detailed metadata for a specific simulation.</li>
+              <li><code>proxy://simulations/{id}/logs</code> — Live log buffer for a simulation.</li>
+              <li><code>proxy://server/status</code> — Server health, version, and system status.</li>
+            </ul>
+
+            <h3>Guided Prompts</h3>
+            <p>Pre-packaged workflow templates for AI clients:</p>
+            <ul>
+              <li><code>setup_http_proxy</code> — Guided prompt for configuring HTTP/RPC proxies.</li>
+              <li><code>setup_websocket_proxy</code> — Guided prompt for configuring WebSocket proxies.</li>
+              <li><code>chaos_test</code> — Interactive chaos engineering test workflow (deploy &rarr; verify &rarr; break &rarr; test &rarr; recover).</li>
+            </ul>
+          </section>
+
+          <!-- ══════════════════════════════════════════════════ -->
+          <section id="mcp-limits" data-track="mcp">
+            <h2>MCP Limitations &amp; Rules</h2>
+            <div class="callout note">
+              <span class="callout-icon">ℹ</span>
+              <span><strong>SimProxy Rules apply to MCP</strong>All MCP tools inherit SimProxy's core execution rules, lifetime caps, and rate limits.</span>
+            </div>
+            <table>
+              <thead><tr><th>Rule / Limitation</th><th>Details</th></tr></thead>
+              <tbody>
+                <tr><td><strong>Workspace Scoping</strong></td><td>All tool actions require your <strong>Sim-Code</strong> (passed as <code>x-user-code</code> header or <code>SIM_CODE</code> env variable). AI assistants can only manage simulations belonging to your workspace.</td></tr>
+                <tr><td><strong>Simulation Lifetime</strong></td><td>Simulations auto-expire after <strong>24 hours max</strong> or <strong>3 hours idle</strong> with no traffic. AI tools like <code>list_simulations</code> and <code>get_simulation</code> report <code>expires_at</code> and <code>idle_expires_at</code> timestamps.</td></tr>
+                <tr><td><strong>Port Addressing</strong></td><td>Simulations are addressed by port number (range <code>1000</code>–<code>65535</code>).</td></tr>
+                <tr><td><strong>Throughput Ceilings</strong></td><td>Default throughput limit is 15 requests/second (customizable via <code>max_requests_per_second</code> up to 1000 req/s). Server endpoints enforce rate limiting.</td></tr>
+                <tr><td><strong>Log Buffer Cap</strong></td><td>The <code>get_simulation_logs</code> tool returns up to 300 recent log entries.</td></tr>
+              </tbody>
+            </table>
+          </section>
+
+          <!-- ══════════════════════════════════════════════════ -->
+          <div class="track-divider" id="track-reference" data-track="both">
+            <span class="track-divider-badge">04</span>
+            <span class="track-divider-title">Reference</span>
+            <span class="track-divider-hint">behaviour, limits and fixes</span>
+            <span class="track-divider-rule"></span>
+          </div>
+
+          <!-- ══════════════════════════════════════════════════ -->
+          <section id="protocols" data-track="both">
+            <h2>HTTP &amp; WebSocket</h2>
+            <p>Both share break, fix and rate limiting — the shape of the failure differs.</p>
+            <table>
+              <thead><tr><th></th><th>http</th><th>ws</th></tr></thead>
+              <tbody>
+                <tr><td><strong>Upstream form</strong></td><td><code>http(s)://…</code></td><td><code>ws(s)://…</code></td></tr>
+                <tr><td><strong>Rate limit unit</strong></td><td>requests / second</td><td>messages / second, per connection</td></tr>
+                <tr><td><strong>Over the limit</strong></td><td><code>429</code> with <code>Retry-After: 1</code></td><td>a <code>429</code> error message back to the client; the message is not forwarded</td></tr>
+                <tr><td><strong>When broken</strong></td><td>your status code + JSON message</td><td>all sockets closed, new ones refused</td></tr>
+              </tbody>
+            </table>
+
+            <h3>HTTP / RPC</h3>
+            <p>
+              A transparent reverse proxy: methods, headers, bodies and streaming all pass through, with
+              60-second timeouts and CORS open to every origin. Self-signed upstream certificates are
+              accepted, so internal staging hosts work without extra setup. Whole websites proxy too —
+              HTML and CSS fetched through the gateway have their root-relative links rewritten so pages
+              keep working; API paths are never rewritten.
+            </p>
+
+            <h3>WebSocket</h3>
+            <p>
+              Each client gets its own upstream connection. Authorization, cookie, origin, user-agent and
+              forwarding headers are passed upstream, along with any subprotocol you request. Messages
+              sent before the upstream finishes connecting are queued briefly and then delivered. Close
+              codes and reasons from the upstream are relayed back to your client, so your reconnect
+              logic sees the real thing.
+            </p>
+
+          </section>
+
+          <!-- ══════════════════════════════════════════════════ -->
+          <section id="endpoints" data-track="both">
+            <h2>Endpoints &amp; routing</h2>
+            <p data-track="web">
+              Every simulation has one address: the <strong>Simulated Endpoint</strong> column. Click it
+              to copy, and give it to your application in place of the real URL.
+            </p>
+            <p data-track="terminal">
+              Every simulation reports one address to call, in <code>proxy_url</code>:
+            </p>
+            <table>
+              <thead><tr><th>Address</th><th>Example</th><th>What it is</th></tr></thead>
+              <tbody>
+                <tr><td><strong>Simulated endpoint</strong><span data-track="terminal"><br/><code>proxy_url</code></span></td><td><code>https://proxy.leafapi.com/proxy/5001</code></td><td>Where your application sends traffic. HTTPS on the SimProxy domain, routed by port.</td></tr>
+                <tr><td><strong>Live URL</strong><span data-track="terminal"><br/><code>original_url</code></span></td><td><code>https://api.example.com</code></td><td>The real upstream it forwards to, for reference.</td></tr>
+              </tbody>
+            </table>
+            <p>
+              The endpoint is served over HTTPS and switches to <code>wss://</code> automatically for
+              WebSockets, so nothing else needs configuring.
+            </p>
+            <h4>What the gateway returns</h4>
+            <ul>
+              <li><code>400</code> — invalid port.</li>
+              <li><code>404</code> — no simulation on that port.</li>
+              <li><code>503</code> — that simulation has stopped.</li>
+              <li><code>502</code> — the request couldn't be forwarded.</li>
+            </ul>
+            <div class="callout tip">
+              <span class="callout-icon">✦</span>
+              <span><strong>Copy the endpoint, don't type it</strong><span data-track="web">Click the endpoint in the table to copy it exactly. Building the URL by hand is the most common reason a simulation looks unreachable.</span><span data-track="terminal">Create returns the exact URL to use — read it back from the response rather than assembling it. Building it by hand is the most common reason a simulation looks unreachable.</span></span>
+            </div>
+          </section>
+
+          <!-- ══════════════════════════════════════════════════ -->
+          <section id="lifetime" data-track="both">
+            <h2>How long a simulation lives</h2>
+            <p>
+              Every simulation holds a port, so none of them live forever. Two limits apply, whichever
+              comes first — when either is reached the proxy is stopped, the simulation disappears and
+              its port goes back into the pool.
+            </p>
+            <table>
+              <thead><tr><th>Limit</th><th>Length</th><th>Measured from</th></tr></thead>
+              <tbody>
+                <tr><td><strong>Maximum lifetime</strong></td><td>24 hours</td><td>When it was created. It applies however busy the simulation is.</td></tr>
+                <tr><td><strong>Idle timeout</strong></td><td>3 hours</td><td>The last traffic it carried.</td></tr>
+              </tbody>
+            </table>
+            <h4>What counts as traffic</h4>
+            <ul>
+              <li><strong>HTTP</strong> — any request that reaches the proxy, including ones it rate-limits or fails on purpose.</li>
+              <li><strong>WebSocket</strong> — a new connection, or a message in either direction. An open socket that goes quiet does <em>not</em> count: a connection left open with no events for three hours is closed with the simulation.</li>
+            </ul>
+            <div class="callout note">
+              <span class="callout-icon">ℹ</span>
+              <span><strong>Create them as you need them</strong><span data-track="web">A simulation you set up yesterday will not be waiting for you today — making a new one takes seconds.</span><span data-track="terminal">Don't create a simulation once and hard-code its port into a suite that runs for weeks. Create it at the start of a run and delete it at the end.</span></span>
+            </div>
+            <p data-track="terminal">
+              Each simulation reports both deadlines, so a long-running script can tell how much time it
+              has left: <code>expires_at</code> (the 24-hour cap), <code>idle_expires_at</code> (three
+              hours from the last traffic) and <code>last_activity_at</code>.
+            </p>
+          </section>
+
+          <!-- ══════════════════════════════════════════════════ -->
+          <section id="limits" data-track="both">
+            <h2>Limits &amp; behaviour</h2>
+            <ul>
+              <li><strong>Simulations are disposable.</strong> They last at most 24 hours, and are retired after 3 hours without traffic — see <a href="#lifetime">how long a simulation lives</a>.</li>
+              <li><strong>A simulation belongs to one Sim-Code.</strong> No other code can list, reach, break, fix, rename or delete it, and a port taken by someone else simply reads as unavailable.</li>
+              <li><strong>A stopped simulation can't be restarted.</strong> Delete it and create it again.</li>
+              <li><strong>Log history is capped</strong> at a few hundred lines per simulation.<span data-track="terminal"> Stream them if you need a full record.</span></li>
+              <li><strong>Ports</strong> must be <code>1000</code>–<code>65535</code> and free on the host.</li>
+              <li><strong>Rate-limit windows reset every second</strong> — a fixed window, not a sliding one, so a burst straddling a boundary can briefly exceed the nominal rate.</li>
+              <li><strong>WebSocket limits count per connection</strong>, not per simulation.</li>
+              <li><strong>Upstream TLS isn't verified</strong>, so self-signed staging endpoints work.</li>
+              <li data-track="terminal"><strong>CORS is fully open</strong>, which is what makes browser-based test runners work.</li>
+            </ul>
+          </section>
+
+          <!-- ══════════════════════════════════════════════════ -->
+          <section id="troubleshooting" data-track="both">
+            <h2>Troubleshooting</h2>
+            <table>
+              <thead><tr><th>Symptom</th><th>Cause &amp; fix</th></tr></thead>
+              <tbody>
+                <tr data-track="web"><td>"Port is already in use"</td><td>Something else holds that port. The message names a free one you can use instead, or click <strong>⚡ Suggest Port</strong>.</td></tr>
+                <tr data-track="terminal"><td><code>409 port … is already in use</code></td><td>Something else holds that port. The reply carries <code>suggested_port</code> — retry with that, or check the port first with <code>/api/ports/check</code>.</td></tr>
+                <tr data-track="terminal"><td><code>401</code> on every call</td><td>The Sim-Code is missing, mistyped, or was not issued by SimProxy. Fetch one from <code>/api/session</code> or copy it from the profile icon in the top-right corner.</td></tr>
+                <tr data-track="web"><td>Your simulations vanished</td><td>A different Sim-Code is in play — clearing site data gets you a new one, and each browser has its own. Simulations are only visible to the code that created them.</td></tr>
+                <tr data-track="terminal"><td>The list comes back empty</td><td>That code has no simulations. A fresh code always starts empty — reuse the code that created them.</td></tr>
+                <tr><td>A simulation created from a script isn't in the UI</td><td>The script used a different Sim-Code from the browser. Copy the one in the profile icon, top-right, and use that in the script to see both in one place.</td></tr>
+                <tr data-track="terminal"><td><code>404</code> on a simulation you can see running</td><td>It belongs to a different Sim-Code. Simulations are only reachable by the code that created them, whether you address them by id or by port.</td></tr>
+                <tr><td>A simulation disappeared</td><td>It hit one of the lifetime limits: 24 hours old, or 3 hours with no traffic. The port is free again, so just create it anew. <span data-track="terminal">Watch <code>idle_expires_at</code> if a run has long quiet stretches.</span></td></tr>
+                <tr><td>State flipped to <code>stopped</code> on its own</td><td>The proxy exited — open its terminal for the reason, then delete and recreate it.</td></tr>
+                <tr><td><span data-track="terminal"><code>409</code> when breaking or fixing</span><span data-track="web">Break and Fix do nothing</span></td><td>That simulation has stopped, so commands can't reach it. Delete it and create it again.</td></tr>
+                <tr><td>Terminals stay empty</td><td>No terminal is selected, or something between you and SimProxy is buffering the stream. Tick a row's Terminal checkbox first.</td></tr>
+                <tr><td>A proxied website looks broken</td><td>Only root-relative links in HTML and CSS are rewritten. Sites that build their URLs in JavaScript can still reach past the proxy — simulating an API rather than a whole site avoids this.</td></tr>
+                <tr><td>Can't reach a simulation</td><td><span data-track="web">Copy the endpoint from the table rather than typing it.</span><span data-track="terminal">Use <code>proxy_url</code> from the response rather than building a URL by hand.</span> HTTP and WebSocket simulations are reached on the SimProxy domain under <code>/proxy/&lt;port&gt;</code>.</td></tr>
+                <tr><td>Rate limit fires sooner than expected</td><td>The ceiling counts every request, including health checks and polling. Raise the limit<span data-track="terminal"> (<code>max_requests_per_second</code>)</span> or point background traffic elsewhere.</td></tr>
+              </tbody>
+            </table>
+          </section>
+
+        </main>
+      </div>
+
+      <!-- ─── Footer ─────────────────────────────────────────── -->
+      <p class="footer-note">
+        <span>&copy; 2026</span>
+        <span class="footer-sep">·</span>
+        <a href="https://www.linkedin.com/in/jaykumar-gohil-298068183/" target="_blank" rel="noopener noreferrer">Gohil Jaykumar</a>
+        <span class="footer-sep">·</span>
+        <span>Built in India 🇮🇳</span>
+        <span class="footer-sep">·</span>
+        <span id="appVersion">v1.3.18</span>
+      </p>
+    </div>
+
+    <script>
+      /* ── Theme follows the choice made on the manager UI ────── */
+      const savedTheme = localStorage.getItem("proxy_sim_theme");
+      document.documentElement.dataset.theme = savedTheme === "light" ? "light" : "dark";
+
+      /* ── Carry query params across navigation ─────────────────
+         Everything travels except the guide choice, which belongs to this
+         page alone and would otherwise trail around the whole site. */
+      function syncNavLinks() {
+        const params = new URLSearchParams(window.location.search);
+        params.delete("doc");
+        const suffix = params.toString() ? `?${params}` : "";
+        for (const link of document.querySelectorAll(".main-nav a")) {
+          link.href = link.getAttribute("href").split("?")[0] + suffix;
+        }
+      }
+      syncNavLinks();
+
+      /* ── MCP Horizontal Client Tabs & AI Auto-Config Prompt ── */
+      (function initMcpDocsTabs() {
+        const docTabBtns = document.querySelectorAll("[data-doc-tab]");
+        const docTabPanels = document.querySelectorAll("#mcp-setup .mcp-tab-panel");
+
+        docTabBtns.forEach((btn) => {
+          btn.addEventListener("click", () => {
+            const target = btn.dataset.docTab;
+            docTabBtns.forEach((b) => {
+              b.classList.remove("is-active");
+              b.setAttribute("aria-selected", "false");
+            });
+            docTabPanels.forEach((panel) => {
+              panel.classList.remove("is-active");
+              panel.hidden = true;
+            });
+            btn.classList.add("is-active");
+            btn.setAttribute("aria-selected", "true");
+            const activePanel = document.getElementById("mcp-doc-" + target);
+            if (activePanel) {
+              activePanel.classList.add("is-active");
+              activePanel.hidden = false;
+            }
+          });
+        });
+
+        document.querySelectorAll(".btn-copy-prompt").forEach((copyPromptBtn) => {
+          copyPromptBtn.addEventListener("click", async () => {
+            const card = copyPromptBtn.closest(".mcp-prompt-card");
+            const promptCodeEl = card ? card.querySelector(".mcp-prompt-box code") : null;
+            if (!promptCodeEl) return;
+            const textToCopy = promptCodeEl.textContent;
+            try {
+              await navigator.clipboard.writeText(textToCopy);
+              const label = copyPromptBtn.querySelector("span");
+              const original = label ? label.textContent : "Copy Prompt for AI";
+              if (label) label.textContent = "Copied!";
+              copyPromptBtn.classList.add("is-copied");
+              setTimeout(() => {
+                if (label) label.textContent = original;
+                copyPromptBtn.classList.remove("is-copied");
+              }, 1800);
+            } catch (err) {
+              console.warn("[Prompt] copy prompt failed", err);
+            }
+          });
+        });
+      })();
+
+      /* ── Copy buttons on code blocks ────────────────────────── */
+      for (const button of document.querySelectorAll(".copy-btn")) {
+        button.addEventListener("click", async () => {
+          const code = button.parentElement.querySelector("pre");
+          if (!code) return;
+          try {
+            await navigator.clipboard.writeText(code.textContent);
+            button.textContent = "copied";
+            button.classList.add("is-copied");
+            setTimeout(() => {
+              button.textContent = "copy";
+              button.classList.remove("is-copied");
+            }, 1600);
+          } catch (error) {
+            console.warn("[Docs] copy failed", error);
+          }
+        });
+      }
+
+      /* ── Highlight the section currently in view ────────────── */
+      const tocLinks = new Map();
+      for (const link of document.querySelectorAll(".toc a")) {
+        tocLinks.set(link.getAttribute("href").slice(1), link);
+      }
+
+      const pageScroller = document.querySelector(".page");
+
+      /* Only what the chosen track shows takes part in scroll-spy: a hidden
+         element reports a rect of all zeros and would otherwise win every time. */
+      let sections = [];
+      function refreshSections() {
+        sections = Array.from(document.querySelectorAll("section[id]"))
+          .filter((section) => !section.hidden);
+      }
+      refreshSections();
+
+      function highlightCurrentSection() {
+        if (!sections.length) return;
+        /* The last section whose top has passed the upper third of the viewport. */
+        const threshold = window.innerHeight / 3;
+        let current = sections[0];
+        for (const section of sections) {
+          if (section.getBoundingClientRect().top <= threshold) current = section;
+        }
+        for (const link of tocLinks.values()) link.classList.remove("is-current");
+        const active = current && tocLinks.get(current.id);
+        if (active) active.classList.add("is-current");
+      }
+
+      let highlightQueued = false;
+      pageScroller.addEventListener("scroll", () => {
+        if (highlightQueued) return;
+        highlightQueued = true;
+        requestAnimationFrame(() => {
+          highlightQueued = false;
+          highlightCurrentSection();
+        });
+      });
+      highlightCurrentSection();
+
+      /* ── Documentation tracks ─────────────────────────────────
+         The page carries both guides at once; picking a card filters it
+         down to one. Anything marked data-track="both" belongs to either,
+         so the shared intro and reference show up in each. */
+      const DOC_PARAM     = "doc";
+      const DOC_TRACKS    = ["web", "terminal", "mcp"];
+      const PICKER_PARAM  = "all";      /* the chooser: where /docs.html lands */
+      const FALLBACK_TRACK = "web";     /* only for a deep link nobody owns */
+      const docPicker  = document.getElementById("docPicker");
+      const docLayout  = document.getElementById("docLayout");
+      const docBack    = document.getElementById("docBack");
+      let   activeTrack = null;
+
+      /* Keep the state in the URL so a refresh, a bookmark or a shared link
+         lands exactly where it was - the chooser included. */
+      function writeTrackParam(value, dropHash) {
+        const url = new URL(window.location.href);
+        if (value) url.searchParams.set(DOC_PARAM, value);
+        else url.searchParams.delete(DOC_PARAM);
+        /* A hash from the guide just left points at a hidden section. */
+        if (dropHash) url.hash = "";
+        history.replaceState(null, "", url.pathname + url.search + url.hash);
+      }
+
+      /* Which guide owns a section — null when either one does. */
+      function trackOfSection(id) {
+        const target = id && document.getElementById(id);
+        const owner = target && target.dataset.track;
+        return DOC_TRACKS.includes(owner) ? owner : null;
+      }
+
+      function showTrack(track, keepScroll) {
+        activeTrack = track;
+        docPicker.hidden = true;
+        docLayout.hidden = false;
+        for (const element of document.querySelectorAll("[data-track]")) {
+          const owner = element.dataset.track;
+          element.hidden = owner !== "both" && owner !== track;
+        }
+        refreshSections();
+        writeTrackParam(track, !keepScroll);
+        if (!keepScroll) pageScroller.scrollTop = 0;
+        highlightCurrentSection();
+      }
+
+      function showPicker() {
+        activeTrack = null;
+        docLayout.hidden = true;
+        docPicker.hidden = false;
+        writeTrackParam(PICKER_PARAM, true);
+        pageScroller.scrollTop = 0;
+      }
+
+      for (const card of document.querySelectorAll("[data-open-track]")) {
+        card.addEventListener("click", () => showTrack(card.dataset.openTrack));
+      }
+      docBack.addEventListener("click", showPicker);
+
+      /* A link pointing into the other guide switches guide first, otherwise
+         it would jump to a section this one keeps hidden. */
+      document.addEventListener("click", (event) => {
+        const link = event.target.closest('a[href^="#"]');
+        if (!link) return;
+        const id = link.getAttribute("href").slice(1);
+        const owner = trackOfSection(id);
+        if (owner && owner !== activeTrack) {
+          event.preventDefault();
+          showTrack(owner, true);
+          window.location.hash = id;   /* keeps ?doc= in place */
+        }
+      });
+
+      /* Opening state: ?doc=<guide> wins, then a deep link opens the guide
+         that owns it, and a plain /docs.html lands on the chooser. */
+      const requestedTrack = new URLSearchParams(window.location.search).get(DOC_PARAM);
+      const openingHash    = window.location.hash.slice(1);
+      const openingSection = openingHash && document.getElementById(openingHash);
+
+      if (DOC_TRACKS.includes(requestedTrack)) {
+        showTrack(requestedTrack, Boolean(openingSection));
+      } else if (requestedTrack !== PICKER_PARAM && openingSection) {
+        showTrack(trackOfSection(openingHash) || FALLBACK_TRACK, true);
+      } else {
+        showPicker();
+      }
+      /* The browser tried to reach the anchor while it was still hidden. */
+      if (openingSection) openingSection.scrollIntoView();
+
+      /* ── Footer version ─────────────────────────────────────── */
+      (async () => {
+        try {
+          const res = await fetch("/api/version");
+          if (!res.ok) return;
+          const { version } = await res.json();
+          if (version) document.getElementById("appVersion").textContent = `v${version}`;
+        } catch (error) {
+          console.warn("[Version] failed to load", error);
+        }
+      })();
+    </script>
+  </body>
+</html>
