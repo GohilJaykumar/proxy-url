@@ -174,7 +174,9 @@
         grid-template-columns: 260px minmax(0,1fr);
         gap: clamp(20px,3vw,44px);
         width: 100%;
-        max-width: 1800px;
+        /* Fills wide screens; only ultra-wide monitors stop it growing. Prose,
+           cards, code and tables all span the column, so both edges align. */
+        max-width: 2200px;
         margin: 20px auto 0;
         align-items: start;
       }
@@ -223,7 +225,7 @@
         box-shadow: var(--shadow-sm);
       }
       .hero h2 { font-size: 24px; letter-spacing: -.4px; margin-bottom: 8px; }
-      .hero p { color: var(--text-muted); max-width: 94ch; }
+      .hero p { color: var(--text-muted); }
       .hero-chips { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 14px; }
       .chip {
         display: inline-flex; align-items: center; gap: 5px;
@@ -245,8 +247,8 @@
         font-size: 12px; font-weight: 700; color: var(--text-muted);
         font-family: var(--font-mono); margin-top: 16px; margin-bottom: 6px;
       }
-      section p { color: var(--text-muted); margin-bottom: 10px; max-width: 94ch; }
-      section ul, section ol { color: var(--text-muted); margin: 0 0 10px 20px; max-width: 94ch; }
+      section p { color: var(--text-muted); margin-bottom: 10px; }
+      section ul, section ol { color: var(--text-muted); margin: 0 0 10px 20px; }
       section li { margin-bottom: 5px; }
       section a { color: var(--accent); text-decoration: none; }
       section a:hover { text-decoration: underline; }
@@ -412,10 +414,11 @@
       .footer-note {
         position: fixed; left: 0; right: 0; bottom: 0;
         padding: 8px 16px;
-        display: flex; align-items: center; justify-content: center; gap: 8px;
+        display: flex; align-items: center; justify-content: center; gap: 2px 8px; flex-wrap: wrap;
         background: var(--surface); border-top: 1px solid var(--border);
         z-index: 50; font-size: 11px; font-family: var(--font-mono); color: var(--text-dim);
       }
+      .footer-note > * { white-space: nowrap; }
       .footer-note a { color: var(--accent); text-decoration: none; font-weight: 600; }
       .footer-note a:hover { opacity: .75; }
       .footer-sep { color: var(--border); }
@@ -508,23 +511,49 @@
         td code { white-space: normal; }
       }
       @media (max-width: 560px) {
+        .topbar, .topbar-left { gap: 12px; }
         .main-nav a { padding: 6px 10px; }
+
+        /* Too narrow for columns: each row becomes a card, and every cell
+           after the first is headed by its column name (data-label). */
+        table, tbody, tr, td { display: block; }
+        table { border: 0; overflow: visible; }
+        thead { display: none; }
+        tbody tr {
+          margin-bottom: 8px; padding: 10px 12px;
+          border: 1px solid var(--border); border-radius: var(--radius-md);
+          background: var(--surface);
+        }
+        tbody td { padding: 3px 0; border-bottom: none; }
+        tbody tr:hover td { background: none; }
+        tbody td:first-child { color: var(--text); font-weight: 600; }
+        tbody td[data-label]:not(:first-child)::before {
+          content: attr(data-label); display: block;
+          font-family: var(--font-mono); font-size: 10px; letter-spacing: .06em;
+          text-transform: uppercase; color: var(--text-dim);
+        }
+        /* A two-column row is just name + text; its label adds nothing. */
+        tbody td:nth-child(2):last-child::before { content: none; }
+
+        .mcp-prompt-card { padding: 14px; }
+        .mcp-tab-btn { padding: 7px 10px; font-size: 12px; }
+      }
+      @media (max-width: 380px) {
+        /* The logo alone keeps the sticky topbar to a single row. */
+        .brand-text { display: none; }
       }
 
       /* ── MCP Horizontal Tabs & AI Auto-Config Prompt ── */
       .mcp-tab-nav {
         display: flex;
         align-items: center;
+        flex-wrap: wrap;
         gap: 6px;
-        overflow-x: auto;
         padding: 4px 2px 10px;
         margin-top: 18px;
         margin-bottom: 14px;
         border-bottom: 1px solid var(--border);
-        -webkit-overflow-scrolling: touch;
       }
-      .mcp-tab-nav::-webkit-scrollbar { height: 4px; }
-      .mcp-tab-nav::-webkit-scrollbar-thumb { background: var(--border); border-radius: 4px; }
 
       .mcp-tab-btn {
         display: inline-flex;
@@ -579,8 +608,10 @@
         color: #93c5fd;
         border: 1px solid rgba(59,130,246,0.25);
       }
-      .mcp-config-path { font-size: 11.5px; color: var(--text-dim); }
-      .mcp-cli-hint { font-size: 12px; margin-top: 8px; color: var(--text-muted); }
+      /* Long OS paths get a line of their own instead of wrapping mid-row. */
+      .mcp-config-path { flex-basis: 100%; font-size: 11.5px; color: var(--text-dim); }
+      .mcp-config-path + .mcp-config-path { margin-top: -6px; }
+      .mcp-cli-hint { font-size: 12px; margin-top: 8px; margin-bottom: 0; color: var(--text-muted); }
 
       /* AI Prompt Card */
       .mcp-prompt-card {
@@ -599,10 +630,11 @@
         margin-bottom: 8px;
         flex-wrap: wrap;
       }
-      .mcp-prompt-title { display: flex; align-items: center; gap: 10px; }
+      .mcp-prompt-title { display: flex; align-items: center; gap: 6px 10px; flex-wrap: wrap; }
       .mcp-prompt-title h3 { font-size: 14px; font-weight: 700; color: var(--text); margin: 0; }
       .mcp-prompt-badge {
         display: inline-block;
+        white-space: nowrap;
         padding: 2px 8px;
         border-radius: 99px;
         font-size: 10.5px;
@@ -646,7 +678,14 @@
         line-height: 1.5;
         color: var(--text);
         word-break: break-word;
+        /* Long prompts scroll inside the box; the copy button takes all of it. */
+        max-height: 220px;
+        overflow-y: auto;
       }
+      .mcp-prompt-box::-webkit-scrollbar { width: 5px; }
+      .mcp-prompt-box::-webkit-scrollbar-thumb { background: var(--border); border-radius: 99px; }
+      /* Plain text, not inline-code chips: chips break into ragged per-line boxes. */
+      .mcp-prompt-box code { background: none; border: 0; padding: 0; font-size: inherit; }
     </style>
       <link rel="stylesheet" href="/sim-code.css" />
     <script src="/sim-code.js" defer></script>
@@ -1626,6 +1665,26 @@ done</pre></div>
               </div>
             </div>
 
+            <!-- AI Skill Prompt Box: teaches the assistant to use SimProxy on its own -->
+            <div class="mcp-prompt-card" style="margin-top: 14px; margin-bottom: 20px;">
+              <div class="mcp-prompt-header">
+                <div class="mcp-prompt-title">
+                  <span class="mcp-prompt-badge">🧠 Skill Prompt</span>
+                  <h3>Ask AI to Create a SimProxy Testing Skill</h3>
+                </div>
+                <button type="button" class="btn-copy-prompt">
+                  <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2"><path d="M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2"/><rect x="8" y="2" width="8" height="4" rx="1" ry="1"/></svg>
+                  <span>Copy Prompt for AI</span>
+                </button>
+              </div>
+              <p class="mcp-prompt-desc">
+                Copy this prompt into your AI coding assistant to give it a reusable skill. From then on, whenever a task involves downtime, retries, failover or error handling, the AI spins up a SimProxy simulation, breaks the dependency, checks how your code reacts and cleans up, without you asking:
+              </p>
+              <div class="mcp-prompt-box">
+                <code>Read the MCP documentation at https://proxy.leafapi.com/docs.html?doc=mcp to learn the SimProxy MCP tools. If the MCP server "proxy-url" is not configured yet, configure it with endpoint "https://proxy.leafapi.com/mcp", transport "streamable-http", and header "x-user-code: <span data-sim-code>&lt;$SIM_CODE&gt;</span>". Then create a reusable skill named "simproxy-testing" in the format this assistant supports (Claude Code: .claude/skills/simproxy-testing/SKILL.md, Cursor: .cursor/rules/simproxy-testing.mdc, others: their project rules file or AGENTS.md). The skill must activate on its own whenever a task involves downtime, outages, failover, retries, timeouts, fallbacks, circuit breakers, or error handling for an external HTTP, RPC, WebSocket, or database dependency, and must instruct you to: 1) find the dependency URL the code uses and create a simulation for it with create_simulation (simulate_url, url_type http/ws/db, and error_status_code / error_response_message when a specific failure matters); 2) point the app or tests at the returned proxy URL through env vars or test config only, never production config, and never commit it; 3) run the scenario with simulation_down and simulation_up, or bulk_status_change when several dependencies fail together; 4) read get_simulation_logs alongside the app's own output and report what held up and what broke; 5) restore the original URL and call delete_simulation when finished. Scan this codebase for its external dependencies and list them in the skill so it knows which URLs to proxy.</code>
+              </div>
+            </div>
+
             <!-- Horizontal Client Tabs -->
             <div class="mcp-tab-nav" role="tablist" aria-label="MCP Client Configurations">
               <button type="button" class="mcp-tab-btn is-active" data-doc-tab="claude" role="tab" aria-selected="true">
@@ -1661,7 +1720,8 @@ done</pre></div>
                 <div class="mcp-config-info">
                   <span class="mcp-config-badge">Config File</span>
                   <code>claude_desktop_config.json</code>
-                  <span class="mcp-config-path">(Mac: <code>~/Library/Application Support/Claude/claude_desktop_config.json</code> | Windows: <code>%APPDATA%\Claude\claude_desktop_config.json</code>)</span>
+                  <span class="mcp-config-path">Mac: <code>~/Library/Application Support/Claude/claude_desktop_config.json</code></span>
+                  <span class="mcp-config-path">Windows: <code>%APPDATA%\Claude\claude_desktop_config.json</code></span>
                 </div>
                 <div class="code-block"><button type="button" class="copy-btn">copy</button><pre>{
   "mcpServers": {
@@ -1674,7 +1734,8 @@ done</pre></div>
     }
   }
 }</pre></div>
-                <p class="mcp-cli-hint">Or run CLI command in terminal: <code>claude mcp add proxy-url https://proxy.leafapi.com/mcp -H "x-user-code: <span data-sim-code>&lt;$SIM_CODE&gt;</span>"</code></p>
+                <p class="mcp-cli-hint">Using Claude Code? Add it from a terminal instead:</p>
+                <div class="code-block"><button type="button" class="copy-btn">copy</button><pre>claude mcp add --transport http proxy-url https://proxy.leafapi.com/mcp --header "x-user-code: <span data-sim-code>&lt;$SIM_CODE&gt;</span>"</pre></div>
               </div>
 
               <!-- Cursor IDE -->
@@ -2127,6 +2188,16 @@ done</pre></div>
             console.warn("[Docs] copy failed", error);
           }
         });
+      }
+
+      /* ── Column names for the stacked (phone) table layout ──── */
+      for (const table of document.querySelectorAll("table")) {
+        const headers = [...table.querySelectorAll("thead th")].map((th) => th.textContent.trim());
+        for (const row of table.querySelectorAll("tbody tr")) {
+          [...row.children].forEach((cell, i) => {
+            if (headers[i]) cell.dataset.label = headers[i];
+          });
+        }
       }
 
       /* ── Highlight the section currently in view ────────────── */

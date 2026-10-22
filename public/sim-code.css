@@ -134,7 +134,8 @@
 
 @media (max-width: 900px) {
   .topbar { padding-right: var(--page-x, 20px); }
-  .sim-code-fab { top: auto; bottom: 16px; }
+  /* Sits above the fixed footer, which wraps to two lines on phones. */
+  .sim-code-fab { top: auto; bottom: 60px; }
   .sim-code-label { display: none; }
   .sim-code-pop { top: auto; bottom: calc(100% + 8px); }
 }
