@@ -685,7 +685,7 @@
       .mcp-prompt-box::-webkit-scrollbar { width: 5px; }
       .mcp-prompt-box::-webkit-scrollbar-thumb { background: var(--border); border-radius: 99px; }
       /* Plain text, not inline-code chips: chips break into ragged per-line boxes. */
-      .mcp-prompt-box code { background: none; border: 0; padding: 0; font-size: inherit; }
+      .mcp-prompt-box code { background: none; border: 0; padding: 0; font-size: inherit; white-space: pre-wrap; }
     </style>
       <link rel="stylesheet" href="/sim-code.css" />
     <script src="/sim-code.js" defer></script>
@@ -1642,35 +1642,17 @@ done</pre></div>
           <section id="mcp-setup" data-track="mcp">
             <h2>Client Configuration</h2>
             <p>
-              SimProxy supports both <strong>Streamable HTTP</strong> (remote/hosted deployments) and <strong>stdio</strong> (local CLI mode). Choose your AI client tab below to view its specific configuration snippet or copy the AI Prompt to let your AI assistant configure MCP automatically.
+              SimProxy supports both <strong>Streamable HTTP</strong> (remote/hosted deployments) and <strong>stdio</strong> (local CLI mode). Choose your AI client tab below to view its specific configuration snippet, or copy one of the AI prompts to have your assistant set it up step by step.
             </p>
 
-            <!-- AI Auto-Configuration Prompt Box -->
+            <!-- AI Prompt 1: connects the MCP server, then writes a testing skill.
+                 The prompt text is flush-left on purpose: the box keeps line
+                 breaks (pre-wrap), so any indentation here would be copied too. -->
             <div class="mcp-prompt-card" style="margin-top: 14px; margin-bottom: 20px;">
               <div class="mcp-prompt-header">
                 <div class="mcp-prompt-title">
-                  <span class="mcp-prompt-badge">⚡ Auto-Config Prompt</span>
-                  <h3>Ask AI to Configure MCP Automatically</h3>
-                </div>
-                <button type="button" class="btn-copy-prompt" id="copyAiPromptBtn">
-                  <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2"><path d="M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2"/><rect x="8" y="2" width="8" height="4" rx="1" ry="1"/></svg>
-                  <span>Copy Prompt for AI</span>
-                </button>
-              </div>
-              <p class="mcp-prompt-desc">
-                Copy this prompt into your AI coding assistant (Claude, Cursor, Antigravity, Devin, VS Code Copilot, PhpStorm AI, etc.). The AI will fetch the documentation URL to understand the MCP tools and write your configuration automatically:
-              </p>
-              <div class="mcp-prompt-box">
-                <code id="aiPromptText">Read the MCP documentation at https://proxy.leafapi.com/docs.html?doc=mcp to understand the SimProxy Model Context Protocol integration and available executable tools. Please configure the MCP server "proxy-url" for this workspace using endpoint "https://proxy.leafapi.com/mcp", transport "streamable-http", and header "x-user-code: <span data-sim-code>&lt;$SIM_CODE&gt;</span>".</code>
-              </div>
-            </div>
-
-            <!-- AI Skill Prompt Box: teaches the assistant to use SimProxy on its own -->
-            <div class="mcp-prompt-card" style="margin-top: 14px; margin-bottom: 20px;">
-              <div class="mcp-prompt-header">
-                <div class="mcp-prompt-title">
-                  <span class="mcp-prompt-badge">🧠 Skill Prompt</span>
-                  <h3>Ask AI to Create a SimProxy Testing Skill</h3>
+                  <span class="mcp-prompt-badge">🧠 Testing Skill + MCP</span>
+                  <h3>Ask AI to Set Up MCP and Create a Testing Skill</h3>
                 </div>
                 <button type="button" class="btn-copy-prompt">
                   <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2"><path d="M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2"/><rect x="8" y="2" width="8" height="4" rx="1" ry="1"/></svg>
@@ -1678,10 +1660,93 @@ done</pre></div>
                 </button>
               </div>
               <p class="mcp-prompt-desc">
-                Copy this prompt into your AI coding assistant to give it a reusable skill. From then on, whenever a task involves downtime, retries, failover or error handling, the AI spins up a SimProxy simulation, breaks the dependency, checks how your code reacts and cleans up, without you asking:
+                Copy this prompt into your AI coding assistant (Claude Code, Cursor, Antigravity, Devin, VS Code Copilot, PhpStorm AI, etc.). It walks the assistant through connecting the SimProxy MCP server and then writing a testing skill. From then on, whenever a task involves downtime, retries, failover or error handling, the assistant proposes a simulation, waits for your OK, breaks the dependency, checks how your code reacts and cleans up:
               </p>
               <div class="mcp-prompt-box">
-                <code>Read the MCP documentation at https://proxy.leafapi.com/docs.html?doc=mcp to learn the SimProxy MCP tools. If the MCP server "proxy-url" is not configured yet, configure it with endpoint "https://proxy.leafapi.com/mcp", transport "streamable-http", and header "x-user-code: <span data-sim-code>&lt;$SIM_CODE&gt;</span>". Then create a reusable skill named "simproxy-testing" in the format this assistant supports (Claude Code: .claude/skills/simproxy-testing/SKILL.md, Cursor: .cursor/rules/simproxy-testing.mdc, others: their project rules file or AGENTS.md). The skill must activate on its own whenever a task involves downtime, outages, failover, retries, timeouts, fallbacks, circuit breakers, or error handling for an external HTTP, RPC, WebSocket, or database dependency, and must instruct you to: 1) find the dependency URL the code uses and create a simulation for it with create_simulation (simulate_url, url_type http/ws/db, and error_status_code / error_response_message when a specific failure matters); 2) point the app or tests at the returned proxy URL through env vars or test config only, never production config, and never commit it; 3) run the scenario with simulation_down and simulation_up, or bulk_status_change when several dependencies fail together; 4) read get_simulation_logs alongside the app's own output and report what held up and what broke; 5) restore the original URL and call delete_simulation when finished. Scan this codebase for its external dependencies and list them in the skill so it knows which URLs to proxy.</code>
+                <code>SimProxy setup and testing skill. Please follow these steps in order.
+
+About this request: I own this workspace and the SimProxy account below. SimProxy (https://proxy.leafapi.com) is a hosted proxy I use to simulate outages in my own app's dependencies. The Sim-Code is my personal account key, and it's fine to use it in my local MCP config. If any step is blocked, needs a permission you don't have, or doesn't match what you see, stop and ask me. Don't try a different route to the same result.
+
+Step 1: Read the docs
+Open https://proxy.leafapi.com/docs.html?doc=mcp with your web fetch or browser tool and read the MCP section (tools, parameters, transport). If you have neither tool, or opening it is denied, tell me and go on to Step 2.
+
+Step 2: Check for an existing server
+If an MCP server named "proxy-url" is already configured, tell me and go to Step 4.
+
+Step 3: Add the server to my local config only
+  Name: proxy-url
+  URL: https://proxy.leafapi.com/mcp
+  Transport: streamable HTTP
+  Header: x-user-code: <span data-sim-code>&lt;$SIM_CODE&gt;</span>
+In Claude Code, run:
+  claude mcp add --transport http --scope local proxy-url https://proxy.leafapi.com/mcp --header "x-user-code: <span data-sim-code>&lt;$SIM_CODE&gt;</span>"
+In Cursor, VS Code or other clients, use the user-level MCP settings, not a file inside this repository. Don't write the Sim-Code into any file that git tracks.
+
+Step 4: Check the connection
+If your client needs a reload, tell me and wait. Then call list_simulations and confirm it works. Don't create anything yet.
+
+Step 5: Find the external dependencies
+Scan this codebase for the external HTTP/RPC, WebSocket and database endpoints it calls. For each one, note the env var or config key it comes from, the hostname, and the type (http, ws or db). Record names and hostnames only. Never record full URLs that contain passwords, tokens or API keys, and don't copy anything out of .env files. Mark each dependency as one of:
+  - safe to simulate: a test or staging endpoint with no credentials in its URL
+  - don't simulate: production, credentials in the URL (most database and Redis URLs), or reachable only on localhost (the hosted proxy can't reach my machine)
+
+Step 6: Write the skill
+Create a skill named "simproxy-testing" in your assistant's format:
+  Claude Code: .claude/skills/simproxy-testing/SKILL.md
+  Cursor: .cursor/rules/simproxy-testing.mdc
+  Others: a "SimProxy testing" section in AGENTS.md or the project rules file
+The skill should load whenever a task involves downtime, outages, failover, retries, timeouts, fallbacks, circuit breakers or error handling for an external HTTP, RPC, WebSocket or database dependency. It must tell the assistant to:
+  1. Pick the dependency from the table below, say which one it plans to break and how, and wait for my OK before creating anything.
+  2. Create the simulation with create_simulation (simulate_url, url_type http/ws/db, plus error_status_code and error_response_message when a specific failure matters).
+  3. Point the app or tests at the returned proxy URL through an env var or test config only. Never edit production config, and never commit the proxy URL.
+  4. Run the scenario with simulation_down and simulation_up, or bulk_status_change when several dependencies fail together.
+  5. Read get_simulation_logs alongside the app's own output, and report what held up and what broke.
+  6. Restore the original URL and call delete_simulation, even if the test failed.
+  7. Never simulate a dependency marked "don't simulate".
+Include the dependency table from Step 5 in the skill.
+
+Step 7: Show me the result
+Show me the skill file and the dependency table. Don't run any simulation yet.</code>
+              </div>
+            </div>
+
+            <!-- AI Prompt 2: connects the MCP server only. -->
+            <div class="mcp-prompt-card" style="margin-top: 14px; margin-bottom: 20px;">
+              <div class="mcp-prompt-header">
+                <div class="mcp-prompt-title">
+                  <span class="mcp-prompt-badge">⚡ MCP Only</span>
+                  <h3>Ask AI to Set Up the MCP Server</h3>
+                </div>
+                <button type="button" class="btn-copy-prompt" id="copyAiPromptBtn">
+                  <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2"><path d="M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2"/><rect x="8" y="2" width="8" height="4" rx="1" ry="1"/></svg>
+                  <span>Copy Prompt for AI</span>
+                </button>
+              </div>
+              <p class="mcp-prompt-desc">
+                Only need the connection? This prompt has your assistant read the docs, add the server to your local config (never a committed file) and confirm it connects, without creating anything:
+              </p>
+              <div class="mcp-prompt-box">
+                <code id="aiPromptText">SimProxy MCP setup. Please follow these steps in order.
+
+About this request: I own this workspace and the SimProxy account below. SimProxy (https://proxy.leafapi.com) is a hosted proxy I use to simulate outages in my own app's dependencies. The Sim-Code is my personal account key, and it's fine to use it in my local MCP config. If any step is blocked, needs a permission you don't have, or doesn't match what you see, stop and ask me. Don't try a different route to the same result.
+
+Step 1: Read the docs
+Open https://proxy.leafapi.com/docs.html?doc=mcp with your web fetch or browser tool and read the MCP section (tools, parameters, transport). If you have neither tool, or opening it is denied, tell me and go on to Step 2. Once the server is connected, it describes its own tools.
+
+Step 2: Check for an existing server
+If an MCP server named "proxy-url" is already configured, tell me and go to Step 4.
+
+Step 3: Add the server to my local config only
+  Name: proxy-url
+  URL: https://proxy.leafapi.com/mcp
+  Transport: streamable HTTP
+  Header: x-user-code: <span data-sim-code>&lt;$SIM_CODE&gt;</span>
+In Claude Code, run:
+  claude mcp add --transport http --scope local proxy-url https://proxy.leafapi.com/mcp --header "x-user-code: <span data-sim-code>&lt;$SIM_CODE&gt;</span>"
+In Cursor, VS Code or other clients, use the user-level MCP settings, not a file inside this repository. Don't write the Sim-Code into any file that git tracks.
+
+Step 4: Check the connection
+If your client needs a reload to pick up the server, tell me and wait. Then call list_simulations and report whether it connected, which tools you see, and how many simulations exist. Don't create, change or delete anything.</code>
               </div>
             </div>
 
