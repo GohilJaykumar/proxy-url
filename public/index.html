@@ -1011,7 +1011,7 @@
             <div class="field-port">
               <label for="port">Port</label>
               <input id="port" type="number" min="1000" max="65535" required />
-              <div class="hint">range: 1000–65535</div>
+              <div class="hint" id="portHint">range: 1000–65535</div>
             </div>
 
             <div class="field-error-code">
@@ -1118,6 +1118,8 @@
               <button type="button" data-cols="4">4</button>
             </div>
           </div>
+          <div id="terminalDeck" class="terminal-grid"></div>
+        </div>
       </div>
 
       <!-- ─── Footer ─────────────────────────────────────────── -->
@@ -1137,6 +1139,7 @@
       const rows               = document.getElementById("simRows");
       const formError          = document.getElementById("formError");
       const portInput          = document.getElementById("port");
+      const portHint           = document.getElementById("portHint");
       const nameInput          = document.getElementById("name");
       const urlTypeInput       = document.getElementById("urlType");
       const simulateUrlInput   = document.getElementById("simulateUrl");
@@ -1670,9 +1673,46 @@
       }
 
       /* ── Port suggestion ────────────────────────────────────── */
+      /* The port follows the next free one until the user types their own.
+         A typed port that is taken is swapped for the next free one above it. */
+      const PORT_HINT_DEFAULT = "range: 1000–65535";
+      let   isPortAutoManaged = true;
+      let   portCheckTimer    = null;
+
+      function setPortHint(text) {
+        if (portHint) portHint.textContent = text || PORT_HINT_DEFAULT;
+      }
+
       async function applyDefaultPort(from = 1000) {
         const result = await api(`/api/ports/suggest?from=${from}`);
         portInput.value = result.suggested_port;
+        isPortAutoManaged = true;
+        setPortHint("");
+      }
+
+      async function ensurePortAvailable() {
+        const port = Number(portInput.value);
+        if (!Number.isInteger(port) || port < 1000 || port > 65535) return;
+        let result;
+        try {
+          result = await api(`/api/ports/check?port=${port}`);
+        } catch {
+          return;
+        }
+        /* The user may have kept typing while the check was in flight. */
+        if (result.available || !result.suggested_port || Number(portInput.value) !== port) return;
+        portInput.value = result.suggested_port;
+        setPortHint(`${port} in use → switched to ${result.suggested_port}`);
+      }
+
+      /* Called on every render: refresh the port once a simulation takes it. */
+      function syncPortWithSimulations(items) {
+        if (document.activeElement === portInput) return;
+        const port = Number(portInput.value);
+        const taken = items.some((sim) => sim.port === port && sim.state !== "stopped");
+        if (!taken) return;
+        if (isPortAutoManaged) applyDefaultPort(1000).catch(() => {});
+        else ensurePortAvailable();
       }
 
       async function applyFormDefaults() {
@@ -2017,6 +2057,7 @@
           return;
         }
         simulationsById = new Map(items.map(sim => [sim.id, sim]));
+        syncPortWithSimulations(items);
         rows.innerHTML = "";
 
         if (editingSimulationId && !simulationsById.has(editingSimulationId)) {
@@ -2412,12 +2453,18 @@
           error_response_message:errorMsg,
           is_custom_json:        isCustomJson
         };
+        /* Only the request itself decides success; a UI refresh that fails
+           afterwards must not report a created simulation as failed. */
+        let created;
         try {
-          const created = await api("/api/simulations", {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify(payload),
-          });
+          created = await createSimulation(payload);
+        } catch (err) {
+          const suggested = err.suggested_port ? ` — try port ${err.suggested_port}` : "";
+          formError.textContent = `⚠ ${err.error || "Failed to create simulation"}${suggested}`;
+          return;
+        }
+
+        try {
           if (created && created.id) {
             const existingIndex = checkedTerminalIds.indexOf(created.id);
             if (existingIndex >= 0) checkedTerminalIds.splice(existingIndex, 1);
@@ -2445,16 +2492,40 @@
           document.getElementById("errorMessage").value = "Service unavailable (simulated)";
           updateSimulateUrlPlaceholder();
           await applyFormDefaults();
-        } catch (err) {
-          const suggested = err.suggested_port ? ` — try port ${err.suggested_port}` : "";
-          formError.textContent = `⚠ ${err.error || "Failed to create simulation"}${suggested}`;
+        } catch (error) {
+          console.error("[Create] simulation created but the page failed to refresh", error);
         }
       });
+
+      /* A 409 means the port was taken after it was checked. The server
+         names the next free one, so take it and try once more. */
+      async function createSimulation(payload) {
+        const post = () => api("/api/simulations", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(payload),
+        });
+        try {
+          return await post();
+        } catch (err) {
+          if (!err || !err.suggested_port) throw err;
+          setPortHint(`${payload.port} in use → switched to ${err.suggested_port}`);
+          portInput.value = err.suggested_port;
+          payload.port = err.suggested_port;
+          return post();
+        }
+      }
 
       /* ── Suggest port ───────────────────────────────────────── */
       suggestBtn.addEventListener("click", async () => {
         portInput.value = "";
         await applyDefaultPort(1000);
+      });
+      portInput.addEventListener("input", () => {
+        isPortAutoManaged = false;
+        setPortHint("");
+        clearTimeout(portCheckTimer);
+        portCheckTimer = setTimeout(ensurePortAvailable, 600);
       });
       if (urlTypeInput) {
         urlTypeInput.addEventListener("change", () => {
@@ -2465,6 +2536,13 @@
       if (simulateUrlInput) {
         simulateUrlInput.addEventListener("input", syncUrlTypeFromSimulateUrl);
         simulateUrlInput.addEventListener("change", syncUrlTypeFromSimulateUrl);
+        /* Starting a new URL is starting a new simulation: hand it a port
+           that is free right now, unless the user picked one. */
+        simulateUrlInput.addEventListener("input", () => {
+          if (!isPortAutoManaged) return;
+          clearTimeout(portCheckTimer);
+          portCheckTimer = setTimeout(() => applyDefaultPort(1000).catch(() => {}), 400);
+        });
       }
       if (nameInput) {
         nameInput.addEventListener("input", handleNameInputChange);
